@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head><body class="popup"><main>
+<div class="eyebrow">SmallVerse · Mission recorder</div><h1>Play once.<br>Save the steps.</h1>
+<p class="muted">Record on a 1440 × 757 game view. Replay waits for your recorded mission checkpoints.</p>
+<div class="card"><div id="status">Loading…</div><small id="message"></small></div>
+<section id="new"><label for="name">Mission name</label><input id="name" maxlength="120" placeholder="Easter Island"><button id="record" class="primary">● Start recording</button></section>
+<section id="replay"><label for="saved">Saved mission</label><select id="saved"></select><label><input type="checkbox" id="ready">I’m at the recorded starting position, zoom, camera direction and mission state.</label><button id="play">▶ Replay selected</button></section>
+<div class="row" style="margin-top:18px"><button id="pause">Pause / Resume</button><button id="stop" class="danger">■ Stop</button></div>
+<button id="coordinates" hidden style="margin-top:10px">Use recorded position once</button>
+<p id="error" role="alert"></p><p><a href="library.html" target="_blank">Open library & sharing ↗</a></p>
+<small>Escape or Alt+Shift+S stops. Chrome shows a debugging banner while the recorder controls the game. Your recordings stay local until exported.</small>
+<script type="module" src="popup.js"></script></main></body></html>
