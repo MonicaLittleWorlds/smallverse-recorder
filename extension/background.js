@@ -1,7 +1,7 @@
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates} from './core.js';
 const STANDARD={width:1440,height:757,dpr:1};
 const ROOT=RAW_ROOT;
 let syncJob=null;
@@ -19,7 +19,7 @@ async function notify(){
   const s=snapshot();await chrome.storage.session.set({status:s});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -86,6 +86,10 @@ async function ingest(sender,step,preFrame){
     if(!s.recording.steps.some(x=>x.missionStart))step.missionStart=true;
     s.acceptedFrom=null;
   }
+  if(s.markFinalPending&&timingCandidates([...s.recording.steps,step]).finishes.includes(s.recording.steps.length)){
+    for(const previous of s.recording.steps)delete previous.completionGate;
+    step.completionGate=true;s.markFinalPending=false;s.finalMarkedDuringRecording=true;
+  }
   s.recording.steps.push(step);
   await put(s.recording);await notify();
 }
@@ -101,7 +105,9 @@ async function stop(message='Stopped. Recording saved locally.'){
   // Flush events enter the serial queue; callers must not be on that queue when stopping.
   s.cancelled=true;
   await release(s);
-  if(s.mode==='recording'){s.recording.steps=learnOptionalPopups(s.recording.steps);s.recording.version=VERSION;}
+  if(s.mode==='recording'){s.recording.steps=learnOptionalPopups(s.recording.steps);s.recording.version=VERSION;
+    if(s.finalMarkedDuringRecording){try{missionTiming({...s.recording,timingReviewed:true});s.recording.timingReviewed=true;}catch{s.recording.timingReviewed=false;}}
+  }
   if(s.recording.steps.length&&!s.recording.source)await put(s.recording);
   await page(s.tabId,{kind:'mode',mode:'idle'}).catch(()=>{});
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
@@ -239,8 +245,21 @@ async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
   const extensionControl=sender.url&&['popup.html','library.html'].some(path=>sender.url===chrome.runtime.getURL(path));
   const fromPage=!!sender.tab&&!extensionControl;
-  if(fromPage&&!['stop','contentReady'].includes(m.kind))throw Error('This command is only available in the extension controls.');
+  if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart'].includes(m.kind))throw Error('This command is only available in the extension controls.');
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};
+  if(m.kind==='markFinalTask'){
+    if(session?.mode!=='recording')throw Error('Start recording first.');
+    const s=session;await serial;if(session!==s)throw Error('Recording stopped.');
+    s.markFinalPending=true;await notify();return {ok:true};
+  }
+  if(m.kind==='markMissionStart'){
+    if(session?.mode!=='recording')throw Error('Start recording first.');
+    await serial;const cp=(await probe(session.tabId)).checkpoint;
+    const step={type:'checkpoint',at:Date.now()-session.started,checkpoint:cp,missionStart:true,url:session.recording.startURL};
+    if(!cp?.title||!timingCandidates([...session.recording.steps,step]).starts.includes(session.recording.steps.length))throw Error('Wait until an active mission objective is visible and release held keys/buttons.');
+    for(const previous of session.recording.steps)delete previous.missionStart;
+    session.recording.steps.push(step);await put(session.recording);await notify();return {ok:true};
+  }
   if(m.kind==='contentReady')return {ok:true};
   if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
   if(m.kind==='sync')return synchronize(!!m.force);

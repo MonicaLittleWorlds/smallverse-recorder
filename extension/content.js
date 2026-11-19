@@ -1,7 +1,7 @@
 (() => {
   if (globalThis.__svRecorder) return;
   globalThis.__svRecorder = true;
-  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status;
+  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart;
   const norm=s=>String(s??'').replace(/\s+/g,' ').trim();
   const sensitive=e=>e?.closest?.('input[type="password"],input[autocomplete*="password"],input[autocomplete^="cc-"],[data-private]');
   const own=e=>e?.closest?.('#sv-recorder-overlay');
@@ -44,12 +44,14 @@
   const send=data=>chrome.runtime.sendMessage(data).catch(()=>{});
   function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
-  function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';}
+  function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
   function makeOverlay(){
     overlay=document.createElement('div');overlay.id='sv-recorder-overlay';
     Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#f6f6f2',color:'#282b26',border:'1px solid #b6bcb0',borderRadius:'4px',padding:'8px',font:'12px system-ui',maxWidth:'290px'});
     status=document.createElement('span');overlay.append(status);
     const stop=document.createElement('button');stop.textContent='Stop';stop.style.marginLeft='10px';stop.onclick=()=>send({kind:'stop'});overlay.append(stop);
+    markStart=document.createElement('button');markStart.textContent='Mission accepted';markStart.title='Press after accepting, when the first active objective is visible';markStart.onclick=()=>{flushText();send({kind:'markMissionStart'});};overlay.append(markStart);
+    markFinal=document.createElement('button');markFinal.textContent='Final task starts here';markFinal.title='Press BEFORE the first action of the final task, not after mission completion';markFinal.onclick=()=>{flushText();send({kind:'markFinalTask'});};overlay.append(markFinal);
     document.documentElement.append(overlay);
   }
   for(const type of ['pointerdown','pointerup','pointermove'])document.addEventListener(type,e=>{

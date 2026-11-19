@@ -134,3 +134,15 @@ test('library tab can list and delete recordings while game tabs cannot',async()
   await call('delete',{id:saved.id},sender);
   assert(!(await call('status',{},sender)).recordings.some(r=>r.id===saved.id));
 });
+
+test('recording toolbar sets timer and holds BEFORE the next final-task action',async()=>{
+ cp={title:'Active objective',text:'After acceptance'};url='https://smallverse.app/space/easterisland';
+ await call('start',{tabId:1,name:'Toolbar timer'});
+ await call('markMissionStart',{}, {tab:{id:1},url});
+ await call('markFinalTask',{}, {tab:{id:1},url});
+ await call('event',{step:{...click[0],url,at:20}},{tab:{id:1}});
+ await call('event',{step:{...click[1],url,at:21}},{tab:{id:1}});
+ await call('stop');
+ const saved=Object.values(local.recordings).find(r=>r.name==='Toolbar timer');
+ assert(saved.timingReviewed);assert.equal(saved.steps.filter(s=>s.missionStart).length,1);assert.equal(saved.steps.find(s=>s.completionGate).type,'pointerdown');
+});

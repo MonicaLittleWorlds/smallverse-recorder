@@ -26,3 +26,10 @@ Each GitHub account can publish five new recordings per UTC day. A 500-entry cat
 OAuth state is signed, expires after ten minutes and is bound to a browser cookie. Extension return URLs are restricted to Chrome identity redirects. Publishing session tokens expire after seven days and are kept in Chrome session storage, which is not exposed to content scripts by default. Browser restart/disconnect requires sign-in again. GitHub user OAuth tokens are used only for the public identity request and not persisted. The server's publishing credential is never sent to the client.
 
 All users receive shared entries through the existing automatic sync. They must review each downloaded version before replay. GitHub raw-content caching can delay visibility. Successful upload is not proof of a successful gameplay replay.
+
+
+## Automatic publishing token renewal
+
+The service supports a private GitHub App with only Contents read/write, installed only on `smallverse-recorder`. Store `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID` and `GITHUB_APP_PRIVATE_KEY` in Worker secrets. GitHub's downloaded PKCS#1 PEM and PKCS#8 PEM are supported. Do not request user OAuth or webhooks for this publishing-only App; the existing separate OAuth app continues to handle user sign-in.
+
+The service signs a short-lived JWT and requests a repository-restricted installation token on demand. Tokens are cached only in memory, renewed with at least one minute remaining, and concurrent requests share one refresh. No monthly renewal job is needed. Installation tokens last one hour. The encrypted private key is a long-lived credential and can be revoked/rotated if needed. An incomplete App configuration fails closed; a complete configuration takes precedence over `PUBLISH_TOKEN`. Keep the old token until live App authentication is verified, then revoke it separately.

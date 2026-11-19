@@ -1,3 +1,4 @@
+import {publishingToken} from './app-auth.js';
 import {publishMission} from './github.js';
 const enc=new TextEncoder();
 const b64=bytes=>btoa(String.fromCharCode(...bytes)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
@@ -13,7 +14,7 @@ export async function handle(request,env,fetcher=fetch){
   const url=new URL(request.url);
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Max-Age':'600'}});
   if(url.pathname==='/')return new Response('SmallVerse mission sharing service. Connect from the recorder to publish reviewed missions.',{headers:{'Content-Type':'text/plain'}});
-  if(!env.OAUTH_CLIENT_ID||!env.OAUTH_CLIENT_SECRET||!env.PUBLISH_TOKEN||!env.SESSION_SECRET||env.SESSION_SECRET.length<32)return json({error:'The owner has not finished configuring GitHub sharing.'},503);
+  if(!env.OAUTH_CLIENT_ID||!env.OAUTH_CLIENT_SECRET||!(env.PUBLISH_TOKEN||(env.GITHUB_APP_ID&&env.GITHUB_INSTALLATION_ID&&env.GITHUB_APP_PRIVATE_KEY))||!env.SESSION_SECRET||env.SESSION_SECRET.length<32)return json({error:'The owner has not finished configuring GitHub sharing.'},503);
   const base=new URL(env.PUBLIC_URL);if(base.protocol!=='https:'||base.origin!==url.origin)return json({error:'Service URL mismatch.'},400);
   try{
     if(url.pathname==='/auth/start'&&request.method==='GET'){
@@ -43,7 +44,7 @@ export async function handle(request,env,fetcher=fetch){
       const chunks=[];let size=0;try{while(true){const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>1100000){await reader.cancel();return json({error:'Recording exceeds 1 MB sharing limit.'},413);}chunks.push(value);}}finally{reader.releaseLock();}
       const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
       const body=JSON.parse(new TextDecoder().decode(bytes));
-      return json(await publishMission(body.recording,body.reviewed,user,env.PUBLISH_TOKEN,fetcher));
+      return json(await publishMission(body.recording,body.reviewed,user,await publishingToken(env,fetcher),fetcher));
     }
     return json({error:'Not found.'},404);
   }catch(error){return json({error:error.message},400);}

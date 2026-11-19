@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.5 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -29,7 +29,13 @@ Only record intended gameplay. Game chat typing is recorded because some mission
 
 Replay requires **180 seconds minimum** from a verified post-acceptance objective to the marked finishing action. It uses a monotonic elapsed-time clock. If the finishing action is reached at 2:40, replay waits 20 seconds, then rechecks the objective/target before sending that action. If the minimum has already elapsed, no extra delay is added. Pauses count toward elapsed mission time, but a paused replay does not resume itself.
 
-In **Review**, select:
+For new recordings, use the on-page controls while playing:
+
+1. After accepting the mission and seeing its active objective, click **Mission accepted**. (An observed labeled acceptance button can also set the subsequent objective automatically.)
+2. Immediately before beginning the final task, click **Final task starts here**, then perform that task normally.
+3. Stop recording. If both markers are valid, the recording saves with its timer already confirmed. Replay preserves the sequence and waits before the first action of the final task until three minutes have elapsed. The last recorded click is not guessed to be the completion action, since it might only close a reward popup.
+
+Existing recordings or missing markers still need the following **Review** setup:
 
 1. **Start timer after this objective**: the first objective visible after mission acceptance. A click on a labeled `Accept this mission` control can suggest the subsequent objective automatically; verify it.
 2. **Wait before this action**: an input that could complete the mission. For an arrival trigger, choose the movement that enters the final area. Do not select a reward dialog or an action after completion.
