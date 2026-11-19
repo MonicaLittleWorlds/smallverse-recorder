@@ -1,6 +1,6 @@
 # Automatic community publishing
 
-Implementation is prepared, but **not live until the owner deploys and configures this service**. It targets Cloudflare Workers; use the Free plan initially and test its 10 ms CPU limit with actual recordings. Automatic uploads are limited to 1 MB; larger recordings remain exportable. Do not enable a paid plan automatically.
+The community service is deployed at https://smallverse-mission-sharing.jwmorrow96.workers.dev. GitHub sign-in was verified in Chrome on November 19, 2026; a real recording upload has not yet been verified. The current publishing token expires December 19, 2026 and must be rotated before then. It targets Cloudflare Workers; use the Free plan initially and test its 10 ms CPU limit with actual recordings. Automatic uploads are limited to 1 MB; larger recordings remain exportable. Do not enable a paid plan automatically.
 
 Visitors sign in with GitHub using an OAuth app with no requested scopes. The app reads their public GitHub identity, not repository access. A separate owner-provided fine-grained publishing token stays in Worker secrets and is limited to Contents read/write for `MonicaLittleWorlds/smallverse-recorder`. It is never shipped in the extension, returned to visitors or committed to GitHub. Do not paste secrets into chat.
 
@@ -15,7 +15,7 @@ Visitors sign in with GitHub using an OAuth app with no requested scopes. The ap
 4. Run `npm run configure-publisher -- https://YOUR-SERVICE.workers.dev`. This sets the public endpoint and grants the extension access only to that host. Commit the public configuration and distribute the updated extension. Users reload/update and accept its identity permission.
 5. Connect GitHub in the library. Validate sharing with a deliberately reviewed recording, verify both the recording JSON and catalog appear in the same commit, then test sync on a second installation. Do not publish private test chat. No live end-to-end upload has yet been verified.
 
-GitHub's app registration and Cloudflare account authorization must be completed by the owner. A GitHub session in Chrome or this development chat is not a credential for the distributed extension.
+GitHub app registration and Cloudflare authorization are configured for this deployment. For a separate deployment, they must be completed by its owner. A GitHub session in Chrome or this development chat is not a credential for the distributed extension.
 
 ## Behavior
 

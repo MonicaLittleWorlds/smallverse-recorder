@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.5 preview; automatic publishing requires owner hosting setup.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.5 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -79,7 +79,7 @@ The catalog is initially empty: the earlier observed playthrough was not a recor
 2. Connect GitHub, then choose **Share to GitHub**. The configured publishing service uploads the reviewed JSON and updates the shared catalog in one commit.
 3. Other installations receive it on their next sync and must review it before replay. Exact retry uploads do not create duplicate entries.
 
-**Owner hosting setup is still required for this preview.** The endpoint is currently blank. See `publisher/README.md`; until configured, Export JSON remains available.
+The community publishing service is configured at https://smallverse-mission-sharing.jwmorrow96.workers.dev. Connect GitHub from the library before sharing. Export JSON remains available.
 
 **Export JSON** and file import remain available. Public exports exclude local IDs and shared-download metadata but include mission inputs, typed text, small visual targets, space URLs, and timer markers. Review them before publishing. Public Git history and attachments may persist after deletion.
 
@@ -136,4 +136,4 @@ License: [MIT](LICENSE). Contributions and demonstrated mission recordings are w
 
 The Share button now uses a GitHub sign-in service to upload the reviewed JSON and update the catalog in one commit. Every signed-in contributor can publish without repository editing access. Duplicate retries reuse the existing contribution; concurrent catalog changes are preserved. Downloaded missions still require local review before replay.
 
-**Not live yet:** the service endpoint is intentionally blank until the owner deploys and configures the service. Connect/Share shows this clearly; Export JSON remains available. Follow `publisher/README.md` for Cloudflare Workers Free setup and GitHub OAuth registration. The owner creates the hosting account once; other users only sign in with GitHub. Never put a publishing token in the extension. Automatic sharing is limited to 1 MB and five new recordings per account per UTC day. Updated recording contents are published as separate contributions.
+The service is deployed and GitHub sign-in was verified in the installed Chrome extension. A real recording upload and second-installation sync have not yet been verified. See `publisher/README.md` for maintenance and deployment instructions. The owner creates the hosting account once; other users only sign in with GitHub. Never put a publishing token in the extension. Automatic sharing is limited to 1 MB and five new recordings per account per UTC day. Updated recording contents are published as separate contributions.

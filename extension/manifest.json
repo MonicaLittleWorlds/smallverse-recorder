@@ -15,7 +15,8 @@
   ],
   "host_permissions": [
     "https://smallverse.app/*",
-    "https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/*"
+    "https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/*",
+    "https://smallverse-mission-sharing.jwmorrow96.workers.dev/*"
   ],
   "background": {
     "service_worker": "background.js",

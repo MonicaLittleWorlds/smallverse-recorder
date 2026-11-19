@@ -1,2 +1,2 @@
-// Set once after deploying the owner's publishing service. No credentials belong here.
-export const PUBLISHER_URL='';
+// Public publishing endpoint only. Never put credentials in the extension.
+export const PUBLISHER_URL='https://smallverse-mission-sharing.jwmorrow96.workers.dev';

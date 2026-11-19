@@ -3,5 +3,6 @@
   "main": "worker.js",
   "compatibility_date": "2026-11-19",
   "workers_dev": true,
-  "vars": { "PUBLIC_URL": "https://smallverse-mission-sharing.YOUR-SUBDOMAIN.workers.dev" }
+  "account_id": "99b6190746acdf7cdff112bf7a2f5083",
+  "vars": { "PUBLIC_URL": "https://smallverse-mission-sharing.jwmorrow96.workers.dev" }
 }
