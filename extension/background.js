@@ -1,4 +1,5 @@
-import {sceneAligned} from './scene.js';
+import {waitForHoverIdentity} from './hover.js';
+import {waitForScene} from './scene.js';
 import {waitForRadialControl} from './radial.js';
 import {playbackProgress,restorePlayback,expectedCheckpoint,recoveryObjectives,verifyRecoveryObjective} from './playback-state.js';
 import {checkForUpdates} from './updates.js';
@@ -173,13 +174,14 @@ async function waitCheckpoint(s,expected,timeout=15000){
   }
 }
 async function point(s,step){
+  if(step.hoverIdentity){
+    if(s.buttons||s.heldKeys.size)throw Error('Release held inputs before checking the door label.');
+    await waitForHoverIdentity(step,{probe:()=>gate(s),read:()=>page(s.tabId,{kind:'hoverIdentity',identity:step.hoverIdentity}),move:p=>safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',...p,buttons:0}),sleep});alive(s);
+    s.coordinateOnce=false;return {x:step.x,y:step.y};
+  }
+
   if(step.sceneAnchors){
-    const observed=await gate(s);
-    if(!checkpointEqual(step.checkpoint,observed.checkpoint))throw Error('Objective changed before the repaired door click.');
-    const f=await capture(s.tabId,s.recording.viewport);alive(s);
-    if(!sceneAligned(f,step.sceneAnchors))throw Error('Visible scene landmarks do not match the repaired door position. Replay paused without clicking.');
-    const current=await gate(s);
-    if(!checkpointEqual(step.checkpoint,current.checkpoint))throw Error('Objective changed before the repaired door click.');
+    await waitForScene(step,{probe:()=>gate(s),capture:()=>capture(s.tabId,s.recording.viewport),sleep});alive(s);
     s.coordinateOnce=false;return {x:step.x,y:step.y};
   }
 

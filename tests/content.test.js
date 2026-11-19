@@ -16,7 +16,7 @@ function setup(){
   const message=m=>{let out;handlers[0](m,{},v=>out=v);return out;};
   message({kind:'mode',mode:'recording',started:Date.now()});messages.length=0;
   const event=(type,extra={})=>listeners[type]({isTrusted:true,target:new Element('INPUT'),key:'',buttons:0,clientX:100,clientY:120,button:0,...extra});
-  return {messages,message,event,Element,setHit:value=>{hit=value;}};
+  return {messages,message,event,Element,setHeadings:value=>{document.querySelectorAll=selector=>selector==='h3'?value:[];},setHit:value=>{hit=value;}};
 }
 test('typing flushes before Enter, and passwords are excluded',()=>{
   const s=setup(),input=new s.Element('INPUT');input.value='knock knock';s.event('input',{target:input});s.event('keydown',{target:input,key:'Enter',code:'Enter',keyCode:13});
@@ -68,4 +68,13 @@ test('button verification requires the exact visible enabled control under the s
   button.disabled=true;assert.equal(verify(),false);button.disabled=false;
   s.setHit(new s.Element('DIV'));assert.equal(verify(),false);
   s.setHit(null);assert.equal(verify(),false);
+});
+
+test('hover identity requires a unique visible heading and exact description, with or without DOM whitespace',()=>{
+ const s=setup(),h=new s.Element('H3'),box=new s.Element();h.textContent='White Door';h.parentElement=box;box.getBoundingClientRect=()=>({left:400,top:200,right:600,bottom:300});s.setHeadings([h]);
+ const check=()=>s.message({kind:'hoverIdentity',identity:{title:'White Door',text:'A white wooden door.'}}).matches;
+ for(const text of ['White DoorA white wooden door.','White Door A white wooden door.']){box.textContent=text;assert.equal(check(),true);}
+ box.textContent='White Door A different door.';assert.equal(check(),false);
+ box.textContent='White Door A white wooden door.';box.getBoundingClientRect=()=>({left:400,top:-100,right:600,bottom:-10});assert.equal(check(),false);
+ box.getBoundingClientRect=()=>({left:400,top:200,right:600,bottom:300});const h2=new s.Element('H3'),box2=new s.Element();h2.textContent=h.textContent;h2.parentElement=box2;box2.textContent=box.textContent;box2.getBoundingClientRect=box.getBoundingClientRect;s.setHeadings([h,h2]);assert.equal(check(),false);
 });

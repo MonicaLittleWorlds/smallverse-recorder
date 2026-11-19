@@ -39,6 +39,10 @@ export function validateRecording(r) {
     if (s.checkpoint && (typeof s.checkpoint.title !== 'string' || typeof s.checkpoint.text !== 'string' || s.checkpoint.title.length > 500 || s.checkpoint.text.length > 4000)) fail('Invalid checkpoint.');
     for(const flag of ['missionStart','completionGate','optionalDisabled'])if(s[flag]!==undefined&&typeof s[flag]!=='boolean')fail('Invalid timing marker.');
     if(s.waitForRadial!==undefined&&(s.waitForRadial!==true||s.type!=='pointerdown'||s.target?.tag!=='button'||s.target?.dialog||![s.target?.aria,s.target?.title,s.target?.text].some(v=>v==='*')))fail('Invalid radial button wait.');
+    if(s.hoverIdentity!==undefined){
+      const h=s.hoverIdentity;
+      if(s.type!=='pointerdown'||s.target||!s.checkpoint?.title||!s.checkpoint?.text||!h||typeof h.title!=='string'||!h.title.trim()||h.title.length>200||typeof h.text!=='string'||!h.text.trim()||h.text.length>500)fail('Invalid hover identity repair.');
+    }
     if(s.sceneAnchors!==undefined){
       const a=s.sceneAnchors;
       if(s.type!=='pointerdown'||s.target||!s.checkpoint?.title||!s.checkpoint?.text||!Array.isArray(a)||a.length!==3)fail('Invalid scene alignment repair.');
@@ -76,7 +80,7 @@ export function validateRecording(r) {
 export function exportRecording(recording, {name=recording.name, notes='', omitText=false}={}) {
   const steps = recording.steps.filter(s => !omitText || s.type !== 'text').map(s => {
     const out={};
-    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial','sceneAnchors']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial','sceneAnchors','hoverIdentity']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
     if(s.originalSteps)out.originalSteps=exportRecording({...recording,steps:s.originalSteps},{omitText}).steps;
     return out;
   });

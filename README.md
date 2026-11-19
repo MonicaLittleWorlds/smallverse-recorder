@@ -4,6 +4,12 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Hover identity and scene settling (v0.6.14)
+
+Reviewed hidden-object repairs can require the exact item title and description to appear after hovering the saved position. Playback first moves away and requires any old matching label to disappear, then hovers the target and requires two matching observations before clicking. Missing, stale, ambiguous or wrong labels pause without clicking. The full objective text must still match. This is a targeted recording repair, not an automatic guess at invisible objects.
+
+Scene landmark checks normalize small screenshot resampling differences and wait for two consecutive matching frames (up to ten captures). They retain fixed positions and reject missing landmarks and shifted cameras. Hover repairs require an updated recording JSON; existing landmark-only repairs benefit from the settling check automatically.
+
 ## Reviewed hidden-target repairs (v0.6.13)
 
 A repaired canvas click can carry three separated visual landmarks from a confirmed scene. Playback requires all three to match at their saved positions and the complete objective text to match before using the saved click. Black pixels alone never authorize a click; missing landmarks, camera shifts or unavailable capture pause playback. This is a targeted repair, not automatic inference of invisible objects.

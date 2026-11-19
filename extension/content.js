@@ -109,6 +109,20 @@
       const control=hit?.closest?.('button,a,input,textarea,select,[role="button"],[role="checkbox"],[contenteditable="true"]');
       reply({matches:!!(hasIdentity&&actual&&control&&!control.disabled&&visible(control)&&keys.every(k=>actual[k]===expected[k]))});
     }
+    else if(m.kind==='hoverIdentity'){
+      const expected=m.identity;
+      const matches=new Set();
+      if(expected&&typeof expected.title==='string'&&typeof expected.text==='string'){
+        for(const heading of document.querySelectorAll('h3')){
+          const box=heading.parentElement;
+          if(!box||own(box)||box.closest('[role="dialog"],dialog')||!visible(heading)||!visible(box))continue;
+          const r=box.getBoundingClientRect();
+          if(r.bottom<=0||r.right<=0||r.top>=innerHeight||r.left>=innerWidth)continue;
+          if(norm(heading.textContent)===norm(expected.title)&&norm(box.textContent).startsWith(norm(expected.title))&&norm(norm(box.textContent).slice(norm(expected.title).length))===norm(expected.text))matches.add(box);
+        }
+      }
+      reply({matches:matches.size===1});
+    }
     else if(m.kind==='resolve'){
       const el=resolve(m.target);
       if(!el||el.disabled){reply(null);return;}

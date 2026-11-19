@@ -21,3 +21,17 @@ test('scene repair survives export and requires spaced landmarks and an exact ob
  assert.deepEqual(exportRecording(validateRecording(r)).steps[0].sceneAnchors,anchors);
  for(const change of [s=>delete s.checkpoint,s=>s.sceneAnchors=[anchors[0],anchors[0],anchors[2]],s=>s.sceneAnchors[0].patch.data=[0],s=>s.target={tag:'button'}]){const copy=structuredClone(r);change(copy.steps[0]);assert.throws(()=>validateRecording(copy));}
 });
+
+import {waitForScene} from '../extension/scene.js';
+test('scene wait tolerates a transient frame and requires two consecutive matches',async()=>{
+ const {frame,anchors}=fixture(),checkpoint={title:'8',text:'Lights out'},step={checkpoint,sceneAnchors:anchors};
+ const blank={...frame,data:new Uint8Array(frame.data.length)},frames=[blank,frame,blank,frame,frame];let calls=0;
+ await waitForScene(step,{probe:async()=>({checkpoint}),capture:async()=>frames[calls++],sleep:async()=>{}});assert.equal(calls,5);
+});
+test('scene wait never authorizes missing landmarks, changed objectives or cancellation',async()=>{
+ const {frame,anchors}=fixture(),checkpoint={title:'8',text:'Lights out'},step={checkpoint,sceneAnchors:anchors};
+ const base={probe:async()=>({checkpoint}),capture:async()=>({...frame,data:new Uint8Array(frame.data.length)}),sleep:async()=>{}};
+ await assert.rejects(waitForScene(step,base),/after 10 checks/);
+ let probes=0;await assert.rejects(waitForScene(step,{...base,capture:async()=>frame,probe:async()=>({checkpoint:++probes===1?checkpoint:{title:'9',text:'Elsewhere'}})}),/Objective changed/);
+ await assert.rejects(waitForScene(step,{...base,probe:async()=>{throw Error('Cancelled');}}),/Cancelled/);
+});
