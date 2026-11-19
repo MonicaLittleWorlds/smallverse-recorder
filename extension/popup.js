@@ -12,12 +12,14 @@ async function refresh(){
   if($('saved').dataset.entries!==available){$('saved').replaceChildren(...usable.map(r=>new Option(`${r.name}${r.source?' · shared':''}${r.reviewRequired?' · review required':''}`,r.id)));$('saved').dataset.entries=available;if(usable.some(r=>r.id===selected))$('saved').value=selected;else if(usable.length)$('saved').value=usable[0].id;$('ready').checked=false;}
   $('record').disabled=status.mode!=='idle'||!tabId;
   $('play').disabled=status.mode!=='idle'||!tabId||!usable.length||!$('saved').value||!$('ready').checked;
+  $('resumeRecording').disabled=status.mode!=='idle'||!tabId||!usable.some(r=>r.id===$('saved').value&&!r.source);
   $('pause').disabled=!['playing','paused'].includes(status.mode);$('stop').disabled=status.mode==='idle';
   $('coordinates').hidden=status.mode!=='paused';
 }
 function action(id,fn){$(id).onclick=async()=>{try{$('error').textContent='';$(id).disabled=true;await fn();await refresh();}catch(e){$('error').textContent=e.message;await refresh().catch(()=>{});}};}
 action('record',async()=>{if(!$('name').value.trim())throw Error('Give this mission a name first.');await request('start',{tabId,name:$('name').value});window.close();});
 action('play',async()=>{await request('play',{tabId,id:$('saved').value});window.close();});
+action('resumeRecording',async()=>{await request('resumeRecording',{tabId,id:$('saved').value});window.close();});
 action('stop',()=>request('stop'));action('pause',()=>request('pause'));
 action('coordinates',async()=>{if(confirm('This bypasses visual matching for one click. Only proceed if the game view matches the recording.'))await request('coordinates');});
 $('ready').onchange=refresh;

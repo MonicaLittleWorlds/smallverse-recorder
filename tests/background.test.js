@@ -146,3 +146,16 @@ test('recording toolbar sets timer and holds BEFORE the next final-task action',
  const saved=Object.values(local.recordings).find(r=>r.name==='Toolbar timer');
  assert(saved.timingReviewed);assert.equal(saved.steps.filter(s=>s.missionStart).length,1);assert.equal(saved.steps.find(s=>s.completionGate).type,'pointerdown');
 });
+
+test('continue recording preserves saved prefix and backup; refuses mismatched objective',async()=>{
+  const imported=await call('import',{recording:recording(click)});
+  const before=await call('get',{id:imported.id});
+  const oldCP=cp;cp={title:'Different task',text:'Changed'};
+  await assert.rejects(call('resumeRecording',{tabId:1,id:imported.id}),/differs/);cp=oldCP;
+  const state=await call('resumeRecording',{tabId:1,id:imported.id});assert.equal(state.mode,'recording');
+  assert.deepEqual((await call('get',{id:imported.id})).steps.slice(0,before.steps.length),before.steps);
+  const backup=Object.values(local.recordings).find(r=>r.name===before.name+' — before continuation');assert.deepEqual(backup.steps,before.steps);
+  await call('event',{step:{type:'text',at:0,url,value:'continued',target:{tag:'input'}}},{tab:{id:1}});
+  await call('stop');const after=await call('get',{id:imported.id});
+  assert.deepEqual(after.steps.slice(0,before.steps.length),before.steps);assert.equal(after.steps.at(-1).value,'continued');assert(after.steps.at(-1).at>=before.steps.at(-1).at);
+});

@@ -71,6 +71,28 @@ async function startRecord(tabId,name){
   try{frame=await capture(tabId,STANDARD);}catch{frame=null;}
   await put(r);await notify();startFrames(session);return snapshot();
 }
+async function resumeRecord(tabId,id){
+  if(session)throw Error('Stop the current session first.');
+  await serial;await storeQueue;
+  const original=(await localLibrary())[id];validateRecording(original);
+  if(original.source||!original.steps.length)throw Error('Choose a personal recording with saved steps.');
+  if(original.steps.length>=MAX_STEPS-1)throw Error('This recording is full.');
+  const r=structuredClone(original),last=r.steps.at(-1),tab=await ensureGame(tabId);
+  if(!sameSpace(tab.url,last.url||r.startURL))throw Error('Return to the space where recording stopped.');
+  const expected=[...r.steps].reverse().find(s=>s.checkpoint?.title)?.checkpoint;
+  const observed=await probe(tabId);
+  if(!expected||!checkpointEqual(expected,observed.checkpoint))throw Error('The current objective differs from the saved endpoint. Missing actions cannot be recovered automatically.');
+  const boundary={type:'checkpoint',at:last.at,checkpoint:observed.checkpoint,url:tab.url};
+  if(!timingCandidates([...r.steps,boundary]).starts.includes(r.steps.length))throw Error('The recording ended during a held input. Review its last steps before continuing.');
+  const p=await attach(tabId,r.viewport);
+  if(!checkpointEqual(expected,p.checkpoint)){await detach(tabId);throw Error('The objective changed while reconnecting.');}
+  // Preserve an untouched recovery copy before appending to the original recording.
+  const backup=structuredClone(original);backup.id=crypto.randomUUID();backup.name=(original.name+' — before continuation').slice(0,120);await put(backup);
+  r.steps.push(boundary);r.timingReviewed=false;
+  session={tabId,mode:'recording',started:Date.now()-last.at,recording:r,message:'Continuing saved recording. Previous steps preserved.',index:0,heldKeys:new Map(),buttons:0};
+  frame=null;try{frame=await capture(tabId,r.viewport);}catch{}
+  await put(r);await notify();startFrames(session);return snapshot();
+}
 async function ingest(sender,step,preFrame){
   const s=session;if(!s||s.mode!=='recording'||sender.tab?.id!==s.tabId)return;
   if(s.recording.steps.length>=MAX_STEPS){await stop('Maximum recording length reached; saved.');return;}
@@ -278,6 +300,7 @@ async function handle(m,sender){
     const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};reviews[m.id]=m.hash;await chrome.storage.local.set({sharedReviews:reviews});return {ok:true};
   }
   if(m.kind==='start')return startRecord(m.tabId,m.name);
+  if(m.kind==='resumeRecording')return resumeRecord(m.tabId,m.id);
   if(m.kind==='play')return play(m.tabId,m.id);
   if(m.kind==='stop'){if(session?.mode==='recording'){await page(session.tabId,{kind:'flush'}).catch(()=>{});await serial;}return stop('Stopped. Saved recordings are in your library.');}
   if(m.kind==='pause')return pause();
@@ -314,7 +337,7 @@ async function handle(m,sender){
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   const action=()=>handle(m,sender);
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
-  const p=['start','play','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
+  const p=['start','resumeRecording','play','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
 chrome.commands.onCommand.addListener(name=>{if(name==='stop')handle({kind:'stop'},{}).catch(()=>{});else if(name==='pause')pause().catch(()=>{});});
