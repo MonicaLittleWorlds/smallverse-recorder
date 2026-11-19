@@ -7,7 +7,10 @@ const node=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)
 const button=(text,fn)=>{const b=node('button',text);b.onclick=()=>Promise.resolve().then(fn).catch(e=>$('error').textContent=e.message);return b;};
 async function refresh(){
   const {recordings,sync}=await request('status');$('recordings').replaceChildren();$('shared').replaceChildren();
-  for(const r of recordings){
+  const query=$('librarySearch').value.trim().toLocaleLowerCase();
+  const matches=recordings.filter(r=>r.name.toLocaleLowerCase().includes(query));
+  $('searchStatus').textContent=query?`${matches.length} matching mission${matches.length===1?'':'s'}`:'';
+  for(const r of matches){
     const card=node('div');card.className='mission';const info=node('div');
     const origin=r.source?`${r.source.author} · ${r.source.revision}${r.source.retired?' · Withdrawn':r.reviewRequired?' · Review required':' · Reviewed'}`:`${r.count} steps · ${r.timingReviewed?'3:00 minimum set':'Timer setup needed'}`;
     info.append(node('h3',r.name),node('p',origin));if(r.source?.syncError)info.append(node('p','Update unavailable; cached version retained.'));
@@ -16,7 +19,8 @@ async function refresh(){
     if(!r.source)actions.append(button('Delete',async()=>{if(confirm(`Delete ${r.name} from this browser? Export it first if you need a backup.`)){await request('delete',{id:r.id});await refresh();}}));
     card.append(actions);$(r.source?'shared':'recordings').append(card);
   }
-  if(!recordings.some(r=>r.source))$('shared').append(node('p','No shared missions published yet.'));
+  if(!matches.some(r=>r.source))$('shared').append(node('p',query?'No matching shared missions.':'No shared missions published yet.'));
+  if(!matches.some(r=>!r.source))$('recordings').append(node('p',query?'No matching personal missions.':'No personal recordings saved yet.'));
   $('syncStatus').textContent=sync.error?`Sync unavailable: ${sync.error} Cached missions remain available.`:sync.lastSuccess?`Last synced ${new Date(sync.lastSuccess).toLocaleString()}.${sync.errors?.length?' '+sync.errors.length+' recording(s) could not update.':''}`:'Syncs automatically when opened and every 30 minutes while Chrome runs.';
 }
 function drawSteps(){
@@ -83,5 +87,6 @@ async function synchronize(force){
   finally{$('loadShared').disabled=false;}
 }
 $('loadShared').onclick=()=>synchronize(true);
+$('librarySearch').oninput=()=>refresh().catch(e=>$('error').textContent=e.message);
 chrome.storage.onChanged.addListener((_changes,area)=>{if(area==='local')refresh().catch(()=>{});});
 await refresh();await refreshPublisher();void synchronize(false);

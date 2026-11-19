@@ -143,3 +143,7 @@ License: [MIT](LICENSE). Contributions and demonstrated mission recordings are w
 The Share button now uses a GitHub sign-in service to upload the reviewed JSON and update the catalog in one commit. Every signed-in contributor can publish without repository editing access. Duplicate retries reuse the existing contribution; concurrent catalog changes are preserved. Downloaded missions still require local review before replay.
 
 The service is deployed and GitHub sign-in was verified in the installed Chrome extension. A real recording upload and second-installation sync have not yet been verified. See `publisher/README.md` for maintenance and deployment instructions. The owner creates the hosting account once; other users only sign in with GitHub. Never put a publishing token in the extension. Automatic sharing is limited to 1 MB and five new recordings per account per UTC day. Updated recording contents are published as separate contributions.
+
+### Finding saved missions
+
+Type any part of a mission name in the recorder search field, select a matching mission, confirm the starting state and choose Replay. Search ignores capitalization and includes active shared missions. The library also searches personal and shared recordings by name. No results means Replay stays disabled.

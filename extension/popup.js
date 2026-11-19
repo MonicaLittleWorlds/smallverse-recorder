@@ -5,11 +5,13 @@ async function refresh(){
   const {status,recordings}=await request('status');
   $('status').textContent=status.mode==='idle'?'Ready':`${status.mode} · ${status.name}`;
   $('message').textContent=`${status.message||''}${status.mode!=='idle'?` (${status.mode==='recording'?status.count:status.index+' / '+status.count} steps)`:''}`;
-  const usable=recordings.filter(r=>!r.source?.retired);
+  const query=$('missionSearch').value.trim().toLocaleLowerCase();
+  const usable=recordings.filter(r=>!r.source?.retired&&r.name.toLocaleLowerCase().includes(query));
+  $('searchStatus').textContent=usable.length?`${usable.length} mission${usable.length===1?'':'s'} found`:'No matching missions.';
   const selected=$('saved').value;const available=usable.map(r=>r.id+':'+r.name+':'+r.reviewRequired).join('|');
-  if($('saved').dataset.entries!==available){$('saved').replaceChildren(...usable.map(r=>new Option(`${r.name}${r.source?' · shared':''}${r.reviewRequired?' · review required':''}`,r.id)));$('saved').dataset.entries=available;if(recordings.some(r=>r.id===selected))$('saved').value=selected;}
+  if($('saved').dataset.entries!==available){$('saved').replaceChildren(...usable.map(r=>new Option(`${r.name}${r.source?' · shared':''}${r.reviewRequired?' · review required':''}`,r.id)));$('saved').dataset.entries=available;if(usable.some(r=>r.id===selected))$('saved').value=selected;else if(usable.length)$('saved').value=usable[0].id;$('ready').checked=false;}
   $('record').disabled=status.mode!=='idle'||!tabId;
-  $('play').disabled=status.mode!=='idle'||!tabId||!usable.length||!$('ready').checked;
+  $('play').disabled=status.mode!=='idle'||!tabId||!usable.length||!$('saved').value||!$('ready').checked;
   $('pause').disabled=!['playing','paused'].includes(status.mode);$('stop').disabled=status.mode==='idle';
   $('coordinates').hidden=status.mode!=='paused';
 }
@@ -19,6 +21,8 @@ action('play',async()=>{await request('play',{tabId,id:$('saved').value});window
 action('stop',()=>request('stop'));action('pause',()=>request('pause'));
 action('coordinates',async()=>{if(confirm('This bypasses visual matching for one click. Only proceed if the game view matches the recording.'))await request('coordinates');});
 $('ready').onchange=refresh;
+$('missionSearch').oninput=()=>refresh().catch(e=>$('error').textContent=e.message);
+$('saved').onchange=()=>{$('ready').checked=false;void refresh();};
 const tabs=await chrome.tabs.query({active:true,currentWindow:true});
 if(tabs[0]?.url?.startsWith('https://smallverse.app/space/'))tabId=tabs[0].id;
 else $('error').textContent='Open a SmallVerse space to start recording or replay.';

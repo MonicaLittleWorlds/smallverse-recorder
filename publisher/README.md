@@ -1,8 +1,8 @@
 # Automatic community publishing
 
-The community service is deployed at https://smallverse-mission-sharing.jwmorrow96.workers.dev. GitHub sign-in was verified in Chrome on November 19, 2026; a real recording upload has not yet been verified. The current publishing token expires December 19, 2026 and must be rotated before then. It targets Cloudflare Workers; use the Free plan initially and test its 10 ms CPU limit with actual recordings. Automatic uploads are limited to 1 MB; larger recordings remain exportable. Do not enable a paid plan automatically.
+The community service is deployed at https://smallverse-mission-sharing.jwmorrow96.workers.dev. GitHub sign-in was verified in Chrome on November 19, 2026; a real recording upload has not yet been verified. Automatic GitHub App token renewal was deployed November 19, 2026. Live token generation and repository-only access were verified; no monthly token replacement is needed. It targets Cloudflare Workers; use the Free plan initially and test its 10 ms CPU limit with actual recordings. Automatic uploads are limited to 1 MB; larger recordings remain exportable. Do not enable a paid plan automatically.
 
-Visitors sign in with GitHub using an OAuth app with no requested scopes. The app reads their public GitHub identity, not repository access. A separate owner-provided fine-grained publishing token stays in Worker secrets and is limited to Contents read/write for `MonicaLittleWorlds/smallverse-recorder`. It is never shipped in the extension, returned to visitors or committed to GitHub. Do not paste secrets into chat.
+Visitors sign in with GitHub using an OAuth app with no requested scopes. The app reads their public GitHub identity, not repository access. The private SV Mission Publisher GitHub App uses an encrypted Worker private key to generate one-hour tokens, limited to Contents read/write for `MonicaLittleWorlds/smallverse-recorder`. It is never shipped in the extension, returned to visitors or committed to GitHub. Do not paste secrets into chat.
 
 ## Owner setup (once)
 
@@ -10,7 +10,7 @@ Visitors sign in with GitHub using an OAuth app with no requested scopes. The ap
 2. Register a GitHub OAuth app under Settings → Developer settings → OAuth Apps. Homepage: the service origin. Callback: `https://YOUR-SERVICE.workers.dev/auth/callback`.
 3. Enter secrets through Wrangler's hidden prompts (`npx wrangler secret put NAME --config publisher/wrangler.jsonc`) or the Cloudflare dashboard:
    - `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET`: from that OAuth app.
-   - `PUBLISH_TOKEN`: fine-grained GitHub token for only this repository, Contents read/write. Set an expiry and rotate it before it expires.
+   - `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`: from a private GitHub App installed only on this repository with Contents read/write. See automatic renewal below. `PUBLISH_TOKEN` is supported only as a legacy alternative.
    - `SESSION_SECRET`: randomly generated secret of at least 32 characters. Rotating it signs everyone out.
 4. Run `npm run configure-publisher -- https://YOUR-SERVICE.workers.dev`. This sets the public endpoint and grants the extension access only to that host. Commit the public configuration and distribute the updated extension. Users reload/update and accept its identity permission.
 5. Connect GitHub in the library. Validate sharing with a deliberately reviewed recording, verify both the recording JSON and catalog appear in the same commit, then test sync on a second installation. Do not publish private test chat. No live end-to-end upload has yet been verified.
