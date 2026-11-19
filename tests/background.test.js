@@ -171,3 +171,15 @@ test('debugger disconnect keeps recording and saves subsequent inputs until expl
   assert.equal((await call('get',{id})).steps.at(-1).value,'after disconnect');
   assert.equal(temporary.activeRecording,null);
 });
+
+test('loading notifications within SmallVerse do not stop recording or discard later inputs',async()=>{
+  await call('start',{tabId:1,name:'Loading signal regression'});
+  const id=temporary.activeRecording.id;
+  listeners.updated(1,{status:'loading'});
+  listeners.updated(1,{url});
+  await call('contentReady',{}, {tab:{id:1}});
+  assert.equal((await call('status')).status.mode,'recording');
+  await call('event',{step:{type:'text',at:50,url,value:'after loading',target:{tag:'input'}}},{tab:{id:1}});
+  await call('stop');
+  assert.equal((await call('get',{id})).steps.at(-1).value,'after loading');
+});

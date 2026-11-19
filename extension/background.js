@@ -357,7 +357,13 @@ chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){
   }
   session=null;s.cancelled=true;lastStatus={mode:'idle',message:'Chrome disconnected replay. Saved steps remain in your library.'};page(tabId,{kind:'mode',mode:'idle'}).catch(()=>{});void notify();
 }});
-chrome.tabs.onUpdated.addListener((tabId,change)=>{if(session?.tabId===tabId&&(change.status==='loading'||change.url&&!gameURL(change.url)))void stop('Navigation stopped this session. Recording saved; separate recordings are required across page reloads.');});
+chrome.tabs.onUpdated.addListener((tabId,change)=>{
+  if(session?.tabId!==tabId)return;
+  // A loading notification alone is not proof that the game document changed.
+  // Recording stays active; contentReady restores its toolbar if a new document loads.
+  if(change.url&&!gameURL(change.url))void stop('Left SmallVerse. Recording saved.');
+  else if(session.mode!=='recording'&&change.status==='loading')void stop('Navigation stopped replay. Recording unchanged.');
+});
 chrome.tabs.onRemoved.addListener(tabId=>{if(session?.tabId===tabId)void stop('Game tab closed. Recording saved.');});
 
 async function githubText(path,limit){
