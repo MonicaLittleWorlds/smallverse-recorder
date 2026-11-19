@@ -30,3 +30,14 @@ test('banner appears for a newer version and disappears after installing it',asy
     assert.equal(elements.updateBanner.hidden,true);
   }finally{delete globalThis.document;delete globalThis.chrome;}
 });
+test('public release service uses edge-compatible fetch and returns no credential',async()=>{
+  const {latestRelease}=await import('../publisher/releases.js');
+  const value=await latestRelease(async(url,options)=>{
+    assert.equal(options.redirect,'manual');
+    assert.equal(options.headers.Authorization,'Bearer test-only');
+    assert.equal(url,'https://api.github.com/repos/MonicaLittleWorlds/smallverse-recorder/releases/latest');
+    return Response.json(release);
+  },{PUBLISH_TOKEN:'test-only'});
+  assert.deepEqual(value,releaseInfo(release));
+  assert(!JSON.stringify(value).includes('test-only'));
+});

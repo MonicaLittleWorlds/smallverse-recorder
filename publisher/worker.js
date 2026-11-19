@@ -14,7 +14,7 @@ const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Contr
 export async function handle(request,env,fetcher=fetch){
   const url=new URL(request.url);
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Max-Age':'600'}});
-  if(url.pathname==='/releases/latest'&&request.method==='GET'){try{return json(await latestRelease(fetcher));}catch{return json({error:'Release information temporarily unavailable.'},503);}}
+  if(url.pathname==='/releases/latest'&&request.method==='GET'){try{return json(await latestRelease(fetcher,env));}catch(error){console.error('Release check failed:',error.message);return json({error:'Release information temporarily unavailable.'},503);}}
   if(url.pathname==='/')return new Response('SmallVerse mission sharing service. Connect from the recorder to publish reviewed missions.',{headers:{'Content-Type':'text/plain'}});
   if(!env.OAUTH_CLIENT_ID||!env.OAUTH_CLIENT_SECRET||!(env.PUBLISH_TOKEN||(env.GITHUB_APP_ID&&env.GITHUB_INSTALLATION_ID&&env.GITHUB_APP_PRIVATE_KEY))||!env.SESSION_SECRET||env.SESSION_SECRET.length<32)return json({error:'The owner has not finished configuring GitHub sharing.'},503);
   const base=new URL(env.PUBLIC_URL);if(base.protocol!=='https:'||base.origin!==url.origin)return json({error:'Service URL mismatch.'},400);
