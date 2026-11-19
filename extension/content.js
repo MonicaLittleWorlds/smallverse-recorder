@@ -1,6 +1,7 @@
 (() => {
   if (globalThis.__svRecorder) return;
   globalThis.__svRecorder = true;
+  const documentToken=crypto.randomUUID();
   let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart;
   const norm=s=>String(s??'').replace(/\s+/g,' ').trim();
   const sensitive=e=>e?.closest?.('input[type="password"],input[autocomplete*="password"],input[autocomplete^="cc-"],[data-private]');
@@ -94,7 +95,7 @@
     },160);
   }).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
-    if(m.kind==='probe')reply({url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
+    if(m.kind==='probe')reply({documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});
@@ -124,7 +125,7 @@
       reply({ok:true});
     }
   });
-  // Keep the recording worker awake even while the player waits on a task.
-  setInterval(()=>{if(mode==='recording')send({kind:'contentReady'});},10000);
-  send({kind:'contentReady'});
+  // Keep the worker awake during recording, playback and pauses.
+  setInterval(()=>{if(mode!=='idle')send({kind:'contentReady',documentToken});},10000);
+  send({kind:'contentReady',documentToken});
 })();

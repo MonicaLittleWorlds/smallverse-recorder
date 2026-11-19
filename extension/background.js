@@ -1,8 +1,11 @@
+import {playbackProgress,restorePlayback,expectedCheckpoint,recoveryObjectives,verifyRecoveryObjective} from './playback-state.js';
 import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
 import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,sameWheelGesture} from './core.js';
+let progressQueue=Promise.resolve();
+function persistPlayback(){const progress=playbackProgress(session);const write=()=>chrome.storage.local.set({activePlayback:progress});progressQueue=progressQueue.then(write,write);return progressQueue;}
 let lastCaptureAt=0;
 let captureQueue=Promise.resolve();
 const ROOT=RAW_ROOT;
@@ -18,7 +21,7 @@ const library=async()=>({...await localLibrary(),...((await chrome.storage.local
 async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await localLibrary();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
 function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null}:lastStatus;}
 async function notify(){
-  const s=snapshot();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
+  const s=snapshot();await persistPlayback();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
   if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
@@ -147,10 +150,11 @@ async function stop(message='Stopped. Recording saved locally.'){
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
 }
 function alive(s){if(session!==s||s.cancelled)throw Error('Cancelled');}
-async function safeInput(s,method,params){alive(s);if(!gameURL((await chrome.tabs.get(s.tabId)).url))throw Error('The tab left SmallVerse.');alive(s);await command(s.tabId,method,params);}
+async function safeInput(s,method,params){alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');s.inFlight=true;await persistPlayback();alive(s);if(!gameURL((await chrome.tabs.get(s.tabId)).url))throw Error('The tab left SmallVerse.');alive(s);await command(s.tabId,method,params);}
 async function gate(s){
   while(s.mode==='paused'){alive(s);await sleep(100);}alive(s);
   const p=await probe(s.tabId);alive(s);
+  if(s.documentToken&&p.documentToken&&s.documentToken!==p.documentToken){s.reconnect=true;throw Error('Game document reloaded. Saved playback position retained.');}
   const step=s.recording.steps[s.index];
   if(!sameSpace(step?.url||s.recording.startURL,p.url))throw Error('Different space. Return to the recorded space, then Retry.');
   if(p.viewport.width!==s.recording.viewport.width||p.viewport.height!==s.recording.viewport.height)throw Error('Game view changed. Stop and restart replay to restore its size.');
@@ -255,6 +259,7 @@ async function waitMinimum(s){
   }
 }
 async function run(s){
+  if(s.runActive)return;s.runActive=true;
   while(session===s&&s.index<s.recording.steps.length){
     try{
       const step=s.recording.steps[s.index];
@@ -266,13 +271,13 @@ async function run(s){
       await execute(s,step);alive(s);
       // Start only after the recorded objective has actually been observed in replay.
       if(s.index===s.timing.start&&s.missionStarted===null)s.missionStarted=performance.now();
-      s.index++;
+      s.index++;s.inFlight=false;
       if(s.pauseRequested&&!s.buttons&&!s.heldKeys.size){s.pauseRequested=false;s.mode='paused';s.message='Paused. Resume when ready.';}
       await notify();
     }catch(e){
       if(session!==s||s.cancelled)return;
-      const partial=s.buttons||s.heldKeys.size;s.wheelIndex=null;await release(s);
-      s.mode='paused';s.message=e.message+(partial?' An input was interrupted; restart replay from a safe starting state.':'');s.restartRequired=!!partial;await notify();
+      const partial=s.buttons||s.heldKeys.size||s.inFlight;s.wheelIndex=null;await release(s);
+      s.mode='paused';s.message=e.message+(partial?' An input may have been interrupted; select the current objective to resume safely.':'');s.restartRequired=!!partial;await notify();
       while(session===s&&s.mode==='paused')await sleep(100);
     }
   }
@@ -286,17 +291,27 @@ async function play(tabId,id,positionReplay=true){
   if(!sharedReviewed(r,reviews))throw Error('Review this shared version in the library before replay.');
   const timing=missionTiming(r);
   const tab=await ensureGame(tabId);if(!sameSpace(tab.url,r.startURL))throw Error('Open the recording’s starting space before replay.');
-  await attach(tabId,r.viewport);
-  session={mode:'playing',positionReplay:positionReplay===true,tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
+  const observed=await attach(tabId,r.viewport);
+  await chrome.storage.local.set({playbackRecording:r});
+  session={documentToken:observed.documentToken,mode:'playing',positionReplay:positionReplay===true,tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
 }
-async function pause(){
+async function pause(tabId){
   if(!session||session.mode==='recording')throw Error('Pause is available during replay. Stop saves a recording.');
   if(session.mode==='paused'){
-    if(session.restartRequired)throw Error('An input was interrupted. Stop and restart from the recorded starting state.');
+    if(session.restartRequired)throw Error('An input may have been interrupted. Use Resume at objective after confirming the game’s current objective.');
+    if(session.reconnect){
+      const target=tabId||session.tabId,observed=await probe(target),expected=expectedCheckpoint(session.recording,session.index);
+      if(!sameSpace(observed.url,session.recording.startURL)||expected&&!checkpointEqual(expected,observed.checkpoint))throw Error('Current objective differs from the saved position. Restore it, or use Resume at objective.');
+      try{await command(target,'Page.enable');}catch{await attach(target,session.recording.viewport);}
+      const verified=await probe(target);
+      if(!sameSpace(verified.url,session.recording.startURL)||expected&&!checkpointEqual(expected,verified.checkpoint))throw Error('Objective changed while reconnecting. Playback remains paused.');
+      if(verified.viewport.width!==session.recording.viewport.width||verified.viewport.height!==session.recording.viewport.height)throw Error('Restore the recorded window size before resuming.');
+      session.tabId=target;session.documentToken=verified.documentToken;session.reconnect=false;
+    }
     session.wheelIndex=null;session.mode='playing';session.message='Replaying.';
   }else if(session.buttons||session.heldKeys.size){session.pauseRequested=true;session.message='Pausing after the current input finishes. Escape stops immediately.';}
   else{session.mode='paused';session.message='Paused. Resume when ready.';}
-  await notify();return snapshot();
+  await notify();if(session.mode==='playing'&&!session.runActive)void run(session);return snapshot();
 }
 async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
@@ -317,7 +332,13 @@ async function handle(m,sender){
     for(const previous of session.recording.steps)delete previous.missionStart;
     session.recording.steps.push(step);await put(session.recording);await notify();return {ok:true};
   }
-  if(m.kind==='contentReady'){if(session?.mode==='recording'&&sender.tab?.id===session.tabId)await notify();return {ok:true};}
+  if(m.kind==='contentReady'){
+    if(session&&sender.tab?.id===session.tabId){
+      if(session.mode!=='recording'&&m.documentToken&&session.documentToken&&m.documentToken!==session.documentToken){session.mode='paused';session.reconnect=true;session.restartRequired=!!(session.inFlight||session.buttons||session.heldKeys.size);session.message='Game document reloaded. Saved playback position retained; verify the objective before resuming.';}
+      await notify();
+    }
+    return {ok:true};
+  }
   if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
   if(m.kind==='checkUpdates')return checkForUpdates();
   if(m.kind==='sync')return synchronize(!!m.force);
@@ -340,10 +361,23 @@ async function handle(m,sender){
   if(m.kind==='play')return play(m.tabId,m.id,m.positionReplay);
   if(m.kind==='captureCheck'){const own=!session,tabId=session?.tabId||m.tabId,viewport=session?.recording.viewport||(await attach(tabId,null)).viewport;try{let f;for(let i=0;i<3;i++)f=await capture(tabId,viewport);return {message:`Three visual captures passed at ${viewport.width}×${viewport.height}; no viewport resizing used.`};}finally{if(own)await detach(tabId);}}
   if(m.kind==='stop'){if(session?.mode==='recording'){await page(session.tabId,{kind:'flush'}).catch(()=>{});await serial;}return stop('Stopped. Saved recordings are in your library.');}
-  if(m.kind==='pause')return pause();
+  if(m.kind==='pause')return pause(m.tabId);
   if(m.kind==='coordinates'){
     if(session?.mode!=='paused'||session.recording.steps[session.index]?.type!=='pointerdown')throw Error('This option is only for a paused pointer target.');
     session.coordinateOnce=true;return pause();
+  }
+  if(m.kind==='recoveryObjectives'){const r=(await library())[m.id];return recoveryObjectives(r);}
+  if(m.kind==='resumeObjective'){
+    if(session&&session.mode!=='paused')throw Error('Pause or stop playback before choosing an objective.');
+    const r=(await library())[m.id];validateRecording(r);const timing=missionTiming(r);
+    if(r.source?.retired||!sharedReviewed(r,(await chrome.storage.local.get('sharedReviews')).sharedReviews||{}))throw Error('Review the shared recording first.');
+    const observed=await probe(m.tabId);if(!sameSpace(observed.url,r.startURL))throw Error('Open the recording’s space.');
+    verifyRecoveryObjective(r,m.index,observed.checkpoint);
+    if(session)await stop('Changing playback recovery point.');
+    const verified=await attach(m.tabId,r.viewport);try{verifyRecoveryObjective(r,m.index,verified.checkpoint);}catch(error){await detach(m.tabId);throw error;}
+    await chrome.storage.local.set({playbackRecording:r});
+    session={tabId:m.tabId,recording:r,index:m.index,timing,positionReplay:m.positionReplay!==false,documentToken:verified.documentToken,missionStarted:performance.now(),mode:'playing',heldKeys:new Map(),buttons:0,message:'Resuming from the verified objective. A fresh three-minute minimum starts now.'};
+    await notify();void run(session);return snapshot();
   }
   if(m.kind==='get')return (await library())[m.id];
   if(m.kind==='save'){
@@ -373,7 +407,11 @@ async function handle(m,sender){
 }
 const recoveredRecording=(async()=>{
   const saved=(await chrome.storage.session.get('activeRecording')).activeRecording;
-  if(!saved)return;
+  if(!saved){
+    const stored=await chrome.storage.local.get(['activePlayback','playbackRecording']);
+    if(stored.activePlayback){try{session=restorePlayback(stored.activePlayback,stored.playbackRecording);await notify();}catch(e){lastStatus={mode:'idle',message:'Saved playback could not be restored: '+e.message};}}
+    return;
+  }
   const recording=(await localLibrary())[saved.id];if(!recording)return;
   try{await ensureGame(saved.tabId);validateRecording(recording);}catch{return;}
   session={...saved,recording,mode:'recording',index:0,heldKeys:new Map(),buttons:0,visualDisconnected:true,message:'Recording restored. Inputs are saving; visual capture needs reconnection.'};
@@ -382,26 +420,26 @@ const recoveredRecording=(async()=>{
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   const action=async()=>{await recoveredRecording;return handle(m,sender);};
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
-  const p=['start','resumeRecording','play','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
+  const p=['start','resumeRecording','play','resumeObjective','pause','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
-chrome.commands.onCommand.addListener(name=>{if(name==='stop')handle({kind:'stop'},{}).catch(()=>{});else if(name==='pause')pause().catch(()=>{});});
+chrome.commands.onCommand.addListener(name=>{void recoveredRecording.then(()=>name==='stop'?handle({kind:'stop'},{}):name==='pause'?pause():null).catch(()=>{});});
 chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){
-  const s=session;clearInterval(frameTimer);frameTimer=null;frame=null;
+  const s=session;if(s.cancelled)return;clearInterval(frameTimer);frameTimer=null;frame=null;
   if(s.mode==='recording'){
     s.visualDisconnected=true;s.message='Still recording clicks and typing. Visual capture disconnected; new canvas clicks may need manual target review.';
     void notify();return;
   }
-  session=null;s.cancelled=true;lastStatus={mode:'idle',message:'Chrome disconnected replay. Saved steps remain in your library.'};page(tabId,{kind:'mode',mode:'idle'}).catch(()=>{});void notify();
+  s.mode='paused';s.reconnect=true;s.restartRequired=!!(s.inFlight||s.buttons||s.heldKeys.size);s.message='Chrome disconnected playback. Your position is saved. Resume to reconnect, or select the current objective if an action was interrupted.';void notify();
 }});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{
   if(session?.tabId!==tabId)return;
   // A loading notification alone is not proof that the game document changed.
   // Recording stays active; contentReady restores its toolbar if a new document loads.
-  if(change.url&&!gameURL(change.url))void stop('Left SmallVerse. Recording saved.');
-  else if(session.mode!=='recording'&&change.status==='loading')void stop('Navigation stopped replay. Recording unchanged.');
+  if(change.url&&!gameURL(change.url)){if(session.mode==='recording')void stop('Left SmallVerse. Recording saved.');else{session.mode='paused';session.reconnect=true;session.restartRequired=!!(session.inFlight||session.buttons||session.heldKeys.size);session.message='Game tab navigated away. Playback position retained; return to the mission to resume.';void notify();}}
+  // Same-space loading signals alone do not end replay; content document tokens detect real reloads.
 });
-chrome.tabs.onRemoved.addListener(tabId=>{if(session?.tabId===tabId)void stop('Game tab closed. Recording saved.');});
+chrome.tabs.onRemoved.addListener(tabId=>{if(session?.tabId!==tabId)return;if(session.mode==='recording')void stop('Game tab closed. Recording saved.');else{session.mode='paused';session.reconnect=true;session.restartRequired=!!(session.inFlight||session.buttons||session.heldKeys.size);session.message='Game tab closed. Playback position retained; reopen the mission and Resume.';void notify();}});
 
 async function githubText(path,limit){
   return readBounded(await fetch(ROOT+path,{cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)}),limit);

@@ -240,3 +240,29 @@ test('visual check retries transient frames before sending the saved click',asyn
     assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
   }finally{await call('stop');chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
 });
+
+test('same-space loading and debugger detachment preserve playback progress for resume',async()=>{
+  const imported=await call('import',{recording:recording(click.map(s=>({...s,at:s.at+2000})))});
+  commands.length=0;await call('play',{tabId:1,id:imported.id});
+  await waitFor(v=>v.status.index===1);
+  listeners.updated(1,{status:'loading'});assert.equal((await call('status')).status.mode,'playing');
+  listeners.detach({tabId:1});await waitFor(v=>v.status.mode==='paused');
+  assert.equal(local.activePlayback.index,1);assert.equal(local.activePlayback.id,imported.id);
+  assert.equal(local.playbackRecording.id,imported.id);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  await call('pause',{tabId:1});assert.equal((await call('status')).status.mode,'playing');
+  await call('stop');assert.equal(local.activePlayback,null);
+});
+
+test('explicit objective resume rejects wrong state and resumes a later verified checkpoint',async()=>{
+  const first={title:'First',text:'earlier'},later={title:'[7]',text:'Open the gates'};
+  const r=recording([{type:'checkpoint',at:1,checkpoint:later},{type:'text',at:2,value:'bob, open the gates',target:{tag:'input'},checkpoint:later},...click.map(s=>({...s,at:5000+s.at,checkpoint:later}))]);
+  r.steps[0].checkpoint=first;delete r.steps[1].completionGate;r.steps[3].completionGate=true;
+  const imported=await call('import',{recording:r});cp=first;commands.length=0;
+  await assert.rejects(call('resumeObjective',{tabId:1,id:imported.id,index:1}),/does not match/);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  cp=later;await call('resumeObjective',{tabId:1,id:imported.id,index:1});
+  await waitFor(v=>v.status.index===3);
+  assert(commands.some(c=>c.method==='Input.insertText'&&c.params.text==='bob, open the gates'));
+  await call('stop');
+});

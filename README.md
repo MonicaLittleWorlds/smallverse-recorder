@@ -4,6 +4,16 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Playback recovery (v0.6.11)
+
+Playback now keeps a local recording snapshot and progress journal. Before sending an input it marks that action pending, and after each completed step it saves the next index, timer progress and held-input state. Worker restarts restore playback **paused**. **Resume playback** reconnects and checks the space, viewport and full objective text before continuing. It never resumes automatically on browser launch.
+
+Debugger disconnections, tab closure and navigation retain the recovery position. Generic same-space loading notifications no longer stop playback; document identity checks pause on actual reloads. A heartbeat also runs during playback and paused sessions. Explicit **Stop** cancels the saved recovery position.
+
+If an input may have been interrupted, the recorder cannot know whether the game received it and will not repeat it automatically. Use **Resume from an objective** to select a currently visible objective whose recorded actions have not already been performed. The selected title and text must match the game. This also works for older runs that lost their position before this update. Objective-based recovery starts a fresh three-minute minimum; exact-position recovery retains previously saved timer progress and conservatively excludes worker downtime.
+
+For Flight Log at task 7 before saying “bob, open the gates,” select **110. [7] — The radio suddenly crackles…**. Do not choose that recovery point if you have already performed its chat/actions.
+
 ## Avatar and animation tolerance (v0.6.10)
 
 Fixed-position canvas replay can accept partially obscured references when multiple detailed regions still match at the recorded location. It requires at least four matching 8×8 regions, coverage in both directions and evidence near the click; blank areas and ambiguous repeating patterns do not establish alignment. If the first comparison fails, replay checks up to three frames before pausing. Named buttons still require the expected visible, enabled control under the saved position. This does not relocate clicks or disable checkpoint/viewport checks.
