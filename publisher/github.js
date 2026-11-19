@@ -1,6 +1,6 @@
 import {prepareShare,validateCatalog,digest,REPOSITORY} from '../extension/sharing.js';
 export async function publishMission(recording,reviewed,user,token,fetcher=fetch){
-  const prepared=prepareShare(recording,reviewed),raw=JSON.stringify(prepared.recording,null,2)+'\n';
+  const prepared=prepareShare(recording,reviewed),raw=JSON.stringify(prepared.recording)+'\n';
   if(new TextEncoder().encode(raw).length>1000000)throw Error('Automatic sharing supports recordings up to 1 MB. Export a larger recording for manual submission.');
   const hash=await digest(raw),path=`recordings/u${user.id}-${hash}.json`,root=`https://api.github.com/repos/${REPOSITORY}`;
   const api=async(endpoint,method='GET',body)=>{

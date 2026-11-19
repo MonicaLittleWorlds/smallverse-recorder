@@ -96,3 +96,11 @@ test('publishing rejects redirects without following them or continuing writes',
   assert.equal(calls,1);
  }
 });
+
+test('visual recordings share as lossless compact JSON instead of hitting the limit from indentation',async()=>{
+ const r=recording();const patch={width:64,height:64,offsetX:32,offsetY:32,data:Array.from({length:4096},(_,i)=>i%256)};
+ r.steps.splice(1,0,...Array.from({length:30},()=>({type:'pointermove',at:0,x:100,y:100,buttons:0,patch})));
+ assert(Buffer.byteLength(JSON.stringify(r,null,2))>1000000);assert(Buffer.byteLength(JSON.stringify(r))<1000000);
+ const mock=github();await publishMission(r,true,user,env.PUBLISH_TOKEN,mock.fetcher);
+ const saved=JSON.parse(mock.trees[0].tree[0].content);assert.deepEqual(saved.steps,r.steps);
+});
