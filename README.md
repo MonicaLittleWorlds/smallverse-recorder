@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.2 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.3 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -52,17 +52,31 @@ New exports use recording format **2**, including the timing markers. Version 1 
 
 “Replay reached the end” means the recorded inputs finished. Check SmallVerse for actual mission completion; the extension does not claim server-side completion or rewards.
 
-## Share recordings on GitHub
+## Automatic shared-library sync
 
-Recordings stay in Chrome local storage until deliberately exported. The repository includes a public [`recordings/`](recordings/) catalog, initially empty. There is no recording from the initial observational session to upload.
+Published missions appear automatically in the library and the replay selector. The extension checks the catalog when its controls/library open, on install/update, at Chrome startup, and approximately every 30 minutes while Chrome is running. Chrome may defer alarms while sleeping. Opening the UI has a one-minute cooldown; **Sync now** forces a check. New syncs wait while recording or replaying.
 
-- Review every typed entry, mission text, visual patch, and space URL before checking the export box.
-- **Export JSON** downloads a portable recording. It contains no local recording ID, full screenshot, authentication cookie, or GitHub credential.
-- Follow the [publishing guide](recordings/README.md) to upload the JSON and add it to `recordings/index.json`.
-- Other users select **Browse shared missions → Download to review → Save locally**, or import a JSON file directly.
-- Recordings are data, never executable JavaScript. Downloads do not automatically run. The extension needs no GitHub write token; publication uses GitHub's normal authenticated website or a Git client.
+- Public downloads require no GitHub sign-in. All installations use this repository's catalog.
+- New/changed versions display **Review required**. Open **Review / Copy**, inspect the inputs and timing markers, check the review box, and choose **Use shared version** before replay.
+- Author, revision, checksum, and last-sync time identify the shared copy. Updating the file invalidates approval for the older version.
+- **Save personal copy** preserves your edits separately. Sync never overwrites personal recordings, imports, or copies.
+- Cached missions remain available offline. Failed downloads keep the last good version; withdrawn catalog entries are retained with a Withdrawn label and excluded from the replay selector.
+- Nothing downloads executable code or starts replay automatically. Sharing a JSON file outside the catalog does not automatically distribute it.
 
-Shared recordings are portable, not guaranteed universal. Standardized view size removes one major difference; starting state, game updates, other players covering targets, animations, camera/zoom, and account prerequisites still matter.
+The catalog is initially empty: the earlier observed playthrough was not a recording made by this program.
+
+## Share to GitHub
+
+1. Open a recording's **Review / Share** screen, review the text/visual targets, and confirm its timer markers. Add starting instructions and required items. Check the public-sharing review box.
+2. Choose **Share to GitHub**. The extension downloads the reviewed JSON and opens a prefilled issue in this repository.
+3. Sign in to GitHub if needed, **attach the downloaded JSON**, and submit the issue. These are explicit steps on GitHub; the button does not silently publish the recording or store a GitHub write token.
+4. A maintainer reviews the submission and adds the recording to the catalog. Once that change is merged to `main`, everyone's extension receives it at the next sync.
+
+**Export JSON** and file import remain available. Public exports exclude local IDs and shared-download metadata but include mission inputs, typed text, small visual targets, space URLs, and timer markers. Review them before publishing. Public Git history and attachments may persist after deletion.
+
+Maintainers can publish a reviewed file with `npm run add-recording -- --file /path/mission.json --slug easter-island --author GitHubName --revision 1`, then review/commit/push the result. The helper validates the mission and timing and generates the catalog checksum. See the [publishing guide](recordings/README.md).
+
+A normal download is not an administrator version. Repository permissions determine who can merge catalog changes. This release does not add a password or user-access service.
 
 ## Known limits
 
@@ -74,17 +88,18 @@ Shared recordings are portable, not guaranteed universal. Standardized view size
 - Hover-only motions are not recorded. Drag movements are sampled about every 65 ms. Rapid interactions or games requiring exact hardware timing need validation.
 - Objective extraction relies on visible dialog headings and paragraphs. Unsupported/missing objective markup cannot supply a reliable checkpoint.
 - Removing steps can break a recording: review adjacent key releases, Enter presses, and pointer releases. There is no automatic repair of arbitrary edits.
-- Recordings save locally, not automatically to GitHub. Export/import is the sharing boundary.
+- Personal recordings are not uploaded automatically. Share to GitHub prepares a download and submission; contributors attach and submit it, then maintainers publish it to the catalog.
 
 ## Permissions and local data
 
 | Permission | Purpose |
 |---|---|
 | `debugger` | Trusted mouse/keyboard replay, screenshots, and standard game viewport. Chrome gives this permission broad capabilities; this extension's code only attaches to validated SmallVerse space URLs. |
+| `alarms` | Periodic public catalog checks while Chrome runs. |
 | `storage`, `unlimitedStorage` | Save mission recordings, including small visual templates, locally. |
 | `scripting`, `activeTab` | Install the recorder in an already-open game tab and identify the selected tab. |
 | SmallVerse host access | Capture inputs and read mission dialogs on game pages. |
-| `raw.githubusercontent.com` host access | Read this repository's shared catalog/files when requested. Chrome host permissions are broader than individual repository paths; the code restricts downloads to the hard-coded repository and validated file paths. |
+| `raw.githubusercontent.com` host access | Read this repository's public shared catalog/files on automatic sync or Sync now. Chrome host permissions are broader than individual repository paths; the code restricts downloads to the hard-coded repository and validated file paths. |
 
 No analytics, cookies API, private account inspection, remote code, AI calls, or automatic publishing. Full screenshots are processed in memory; only small grayscale click patches are stored. Mission recordings can still include personal game chat and private-space URLs: review before publishing. This project is independent of SmallVerse; check the game's rules before using automation on an account.
 
@@ -95,7 +110,7 @@ npm run check
 npm test
 ```
 
-No npm dependencies are required. Nineteen tests exercise the three-minute hold (including cancellation, pause and fallback), marker validation/portability, content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
+No npm dependencies are required. Twenty-six tests exercise sync/version review, offline cache preservation, personal-copy isolation, sharing submission preparation, catalog publishing, and the three-minute hold (including cancellation, pause and fallback), marker validation/portability, content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
 
 - `extension/content.js`: input capture and DOM checkpoint/target extraction.
 - `extension/background.js`: capture, persistence, viewport, playback and sharing reads.

@@ -1,11 +1,12 @@
 {
   "name": "smallverse-recorder",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "add-recording": "node scripts/add-recording.mjs"
   },
   "engines": {
     "node": ">=20"

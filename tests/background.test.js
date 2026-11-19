@@ -9,9 +9,10 @@ const event=name=>({addListener:fn=>listeners[name]=fn});
 const storage=object=>({get:async key=>structuredClone({[key]:object[key]}),set:async values=>Object.assign(object,structuredClone(values))});
 globalThis.chrome={
   storage:{local:storage(local),session:storage(temporary)},
-  runtime:{onMessage:event('message')},
+  runtime:{onMessage:event('message'),onInstalled:event('installed'),onStartup:event('startup')},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
   commands:{onCommand:event('command')},
+  alarms:{create:async()=>{},onAlarm:event('alarm')},
   scripting:{executeScript:async()=>{}},
   tabs:{get:async id=>({id,url}),onUpdated:event('updated'),onRemoved:event('removed'),sendMessage:async(_id,m)=>{
     if(m.kind==='probe')return {url,viewport:{width:1440,height:757},checkpoint:cp};
@@ -70,4 +71,31 @@ test('unreviewed legacy recordings cannot replay without timing setup',async()=>
   const r=recording(click);delete r.timingReviewed;
   const imported=await call('import',{recording:r});
   await assert.rejects(call('play',{tabId:1,id:imported.id}),/Confirm the timer/);
+});
+
+test('shared sync adds to replay library, requires per-version review and preserves personal edits',async()=>{
+  url='https://smallverse.app/space/easterisland';
+  const r=recording(click),raw=JSON.stringify(r);
+  const fetchMock=mock.method(globalThis,'fetch',async address=>new Response(String(address).endsWith('index.json')?JSON.stringify([{name:r.name,path:'recordings/test.json',author:'Contributor'}]):raw));
+  const beforePersonal=Object.keys(local.recordings).length;
+  await call('sync',{force:true});
+  let state=await call('status'),shared=state.recordings.find(r=>r.source);
+  assert(shared);assert(shared.reviewRequired);assert.equal(shared.source.author,'Contributor');
+  assert.equal(Object.keys(local.recordings).length,beforePersonal);
+  await assert.rejects(call('play',{tabId:1,id:shared.id}),/Review this shared version/);
+  const original=await call('get',{id:shared.id});
+  await call('approveShared',{id:shared.id,hash:shared.source.hash});
+  assert.equal((await call('status')).recordings.find(r=>r.id===shared.id).reviewRequired,false);
+  const copy={...original,name:'My edited copy'};const saved=await call('save',{recording:copy});assert(saved.personalCopy);assert.notEqual(saved.id,shared.id);
+  assert.equal((await call('get',{id:shared.id})).name,r.name);
+  assert.equal((await call('get',{id:saved.id})).source,undefined);
+  fetchMock.mock.mockImplementation(async address=>new Response(String(address).endsWith('index.json')?JSON.stringify([{name:r.name,path:'recordings/test.json',author:'Contributor'}]):JSON.stringify({...r,notes:'Updated'})));
+  await call('sync',{force:true});
+  assert((await call('status')).recordings.find(r=>r.id===shared.id).reviewRequired);
+  assert.equal((await call('get',{id:saved.id})).name,'My edited copy');
+  await assert.rejects(call('approveShared',{id:shared.id,hash:shared.source.hash}),/version changed/);
+  fetchMock.mock.mockImplementation(async()=>{throw Error('Offline');});
+  const failed=await call('sync',{force:true});assert.match(failed.error,/Offline/);
+  assert((await call('get',{id:shared.id})).steps.length);
+  fetchMock.mock.restore();
 });

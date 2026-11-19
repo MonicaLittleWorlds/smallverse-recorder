@@ -1,13 +1,17 @@
+import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
 import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS} from './core.js';
 const STANDARD={width:1440,height:757,dpr:1};
-const ROOT='https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/main/';
+const ROOT=RAW_ROOT;
+let syncJob=null;
+const SYNC_ALARM='shared-mission-sync';
 let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), frameTimer=null, frame=null, captureBusy=false, storeQueue=Promise.resolve();
 let lastStatus={mode:'idle',message:'Ready. Open a SmallVerse space to record.'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const page=(tabId,m)=>chrome.tabs.sendMessage(tabId,m);
 const command=(tabId,method,params={})=>chrome.debugger.sendCommand({tabId},method,params);
-const library=async()=> (await chrome.storage.local.get('recordings')).recordings||{};
-async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await library();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
+const localLibrary=async()=> (await chrome.storage.local.get('recordings')).recordings||{};
+const library=async()=>({...await localLibrary(),...((await chrome.storage.local.get('sharedRecordings')).sharedRecordings||{})});
+async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await localLibrary();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
 function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null}:lastStatus;}
 async function notify(){
   const s=snapshot();await chrome.storage.session.set({status:s});
@@ -93,7 +97,7 @@ async function stop(message='Stopped. Recording saved locally.'){
   // Flush events enter the serial queue; callers must not be on that queue when stopping.
   s.cancelled=true;
   await release(s);
-  if(s.recording.steps.length)await put(s.recording);
+  if(s.recording.steps.length&&!s.recording.source)await put(s.recording);
   await page(s.tabId,{kind:'mode',mode:'idle'}).catch(()=>{});
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
 }
@@ -188,7 +192,11 @@ async function run(s){
 }
 async function play(tabId,id){
   if(session)throw Error('Stop the current session first.');
-  const r=(await library())[id];validateRecording(r);const timing=missionTiming(r);
+  const r=(await library())[id];validateRecording(r);
+  if(r.source?.retired)throw Error('This mission was removed from the shared catalog. Review it and save a personal copy to use it.');
+  const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};
+  if(!sharedReviewed(r,reviews))throw Error('Review this shared version in the library before replay.');
+  const timing=missionTiming(r);
   const tab=await ensureGame(tabId);if(!sameSpace(tab.url,r.startURL))throw Error('Open the recording’s starting space before replay.');
   await attach(tabId,r.viewport);
   session={mode:'playing',tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
@@ -208,7 +216,14 @@ async function handle(m,sender){
   if(fromPage&&!['stop','contentReady'].includes(m.kind))throw Error('This command is only available in the extension controls.');
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};
   if(m.kind==='contentReady')return {ok:true};
-  if(m.kind==='status')return {status:snapshot(),recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length}))};
+  if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
+  if(m.kind==='sync')return synchronize(!!m.force);
+  if(m.kind==='prepareShare')return prepareShare(m.recording,m.reviewed);
+  if(m.kind==='approveShared'){
+    const all=(await chrome.storage.local.get('sharedRecordings')).sharedRecordings||{},r=all[m.id];
+    if(!r||r.source.hash!==m.hash)throw Error('The shared version changed. Reopen it and review the new version.');
+    const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};reviews[m.id]=m.hash;await chrome.storage.local.set({sharedReviews:reviews});return {ok:true};
+  }
   if(m.kind==='start')return startRecord(m.tabId,m.name);
   if(m.kind==='play')return play(m.tabId,m.id);
   if(m.kind==='stop'){if(session?.mode==='recording'){await page(session.tabId,{kind:'flush'}).catch(()=>{});await serial;}return stop('Stopped. Saved recordings are in your library.');}
@@ -219,14 +234,16 @@ async function handle(m,sender){
   }
   if(m.kind==='get')return (await library())[m.id];
   if(m.kind==='save'){
+    const original=(await library())[m.recording.id];
+    if(original?.source){const copy=exportRecording(validateRecording(m.recording),{notes:m.recording.notes||''});copy.id=crypto.randomUUID();copy.created=new Date().toISOString();await put(copy);return {id:copy.id,personalCopy:true};}
     if(session?.recording.id===m.recording.id)throw Error('Stop this recording before editing.');
-    const r=validateRecording(m.recording);if(typeof r.id!=='string'||!/^[a-f0-9-]{36}$/.test(r.id))throw Error('Invalid local recording ID.');await put(r);return {ok:true};
+    const r=validateRecording(m.recording);if(typeof r.id!=='string'||!/^[a-f0-9-]{36}$/.test(r.id))throw Error('Invalid local recording ID.');await put(r);return {ok:true,id:r.id};
   }
   if(m.kind==='import'){
     const source=validateRecording(m.recording),r=exportRecording(source,{notes:source.notes||''});r.id=crypto.randomUUID();r.created=new Date().toISOString();await put(r);return {id:r.id};
   }
   if(m.kind==='delete'){
-    if(session?.recording.id===m.id)throw Error('Stop this recording first.');await storeQueue;const all=await library();delete all[m.id];await chrome.storage.local.set({recordings:all});return {ok:true};
+    if(session?.recording.id===m.id)throw Error('Stop this recording first.');if((await library())[m.id]?.source)throw Error('Shared originals are managed by sync. Save a personal copy to edit.');await storeQueue;const all=await localLibrary();delete all[m.id];await chrome.storage.local.set({recordings:all});return {ok:true};
   }
   if(m.kind==='catalog'){
     const response=await fetch(ROOT+'recordings/index.json',{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error('Shared library is unavailable. Try again later.');
@@ -244,10 +261,37 @@ async function handle(m,sender){
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   const action=()=>handle(m,sender);
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
-  const p=['start','play','stop','save','delete','import'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
+  const p=['start','play','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
 chrome.commands.onCommand.addListener(name=>{if(name==='stop')handle({kind:'stop'},{}).catch(()=>{});else if(name==='pause')pause().catch(()=>{});});
 chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){const s=session;session=null;s.cancelled=true;clearInterval(frameTimer);frame=null;lastStatus={mode:'idle',message:'Chrome disconnected the recorder. Saved steps remain in your library.'};page(tabId,{kind:'mode',mode:'idle'}).catch(()=>{});notify();}});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(session?.tabId===tabId&&(change.status==='loading'||change.url&&!gameURL(change.url)))void stop('Navigation stopped this session. Recording saved; separate recordings are required across page reloads.');});
 chrome.tabs.onRemoved.addListener(tabId=>{if(session?.tabId===tabId)void stop('Game tab closed. Recording saved.');});
+
+async function githubText(path,limit){
+  return readBounded(await fetch(ROOT+path,{cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)}),limit);
+}
+async function synchronize(force=false){
+  if(syncJob)return syncJob;
+  if(session)return {deferred:true,message:'Sync waits until recording or replay stops.'};
+  const previousState=(await chrome.storage.local.get('syncState')).syncState||{};
+  if(syncJob)return syncJob;
+  if(session)return {deferred:true,message:'Sync waits until recording or replay stops.'};
+  if(!force&&Date.now()-(previousState.attemptedAt||0)<60000)return previousState;
+  syncJob=(async()=>{
+    const attemptedAt=Date.now();
+    try{
+      const entries=validateCatalog(JSON.parse(await githubText('recordings/index.json',1000000)));
+      const previous=(await chrome.storage.local.get('sharedRecordings')).sharedRecordings||{};
+      const result=await syncShared(previous,entries,path=>githubText(path,25000000));
+      const state={attemptedAt,lastSuccess:Date.now(),added:result.added,updated:result.updated,count:Object.values(result.recordings).filter(r=>!r.source.retired).length,errors:result.errors};
+      await chrome.storage.local.set({sharedRecordings:result.recordings,syncState:state});return state;
+    }catch(e){const state={...previousState,attemptedAt,error:e.message};await chrome.storage.local.set({syncState:state});return state;}
+  })().finally(()=>{syncJob=null;});
+  return syncJob;
+}
+async function setupSync(){await chrome.alarms.create(SYNC_ALARM,{periodInMinutes:30});void synchronize();}
+chrome.runtime.onInstalled.addListener(()=>{void setupSync();});
+chrome.runtime.onStartup.addListener(()=>{void setupSync();});
+chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name===SYNC_ALARM)void synchronize();});

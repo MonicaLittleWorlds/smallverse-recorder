@@ -5,10 +5,11 @@ async function refresh(){
   const {status,recordings}=await request('status');
   $('status').textContent=status.mode==='idle'?'Ready':`${status.mode} · ${status.name}`;
   $('message').textContent=`${status.message||''}${status.mode!=='idle'?` (${status.mode==='recording'?status.count:status.index+' / '+status.count} steps)`:''}`;
-  const selected=$('saved').value;const available=recordings.map(r=>r.id+':'+r.name).join('|');
-  if($('saved').dataset.entries!==available){$('saved').replaceChildren(...recordings.map(r=>new Option(`${r.name} · ${r.count} steps`,r.id)));$('saved').dataset.entries=available;if(recordings.some(r=>r.id===selected))$('saved').value=selected;}
+  const usable=recordings.filter(r=>!r.source?.retired);
+  const selected=$('saved').value;const available=usable.map(r=>r.id+':'+r.name+':'+r.reviewRequired).join('|');
+  if($('saved').dataset.entries!==available){$('saved').replaceChildren(...usable.map(r=>new Option(`${r.name}${r.source?' · shared':''}${r.reviewRequired?' · review required':''}`,r.id)));$('saved').dataset.entries=available;if(recordings.some(r=>r.id===selected))$('saved').value=selected;}
   $('record').disabled=status.mode!=='idle'||!tabId;
-  $('play').disabled=status.mode!=='idle'||!tabId||!recordings.length||!$('ready').checked;
+  $('play').disabled=status.mode!=='idle'||!tabId||!usable.length||!$('ready').checked;
   $('pause').disabled=!['playing','paused'].includes(status.mode);$('stop').disabled=status.mode==='idle';
   $('coordinates').hidden=status.mode!=='paused';
 }
@@ -22,3 +23,5 @@ const tabs=await chrome.tabs.query({active:true,currentWindow:true});
 if(tabs[0]?.url?.startsWith('https://smallverse.app/space/'))tabId=tabs[0].id;
 else $('error').textContent='Open a SmallVerse space to start recording or replay.';
 await refresh();setInterval(()=>refresh().catch(()=>{}),700);
+
+void request('sync').catch(()=>{});
