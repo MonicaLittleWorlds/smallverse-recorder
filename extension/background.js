@@ -175,9 +175,13 @@ async function point(s,step){
       throw Error('The recorded control is missing, covered, or moved from its saved position. Restore the view, then Retry.');
     }
     if(!step.patch)throw Error('Alignment cannot be verified: this action has no visual reference. Re-record this mission with visual capture working.');
-    const f=await capture(s.tabId,s.recording.viewport);alive(s);
-    if(!recordedPointMatches(f,step.patch,step.x,step.y))throw Error('View no longer matches the recorded click. Replay paused before clicking. Restore camera/zoom and retry.');
-    return {x:step.x,y:step.y};
+    for(let attempt=0;attempt<3;attempt++){
+      await gate(s);await waitCheckpoint(s,step.checkpoint);
+      const f=await capture(s.tabId,s.recording.viewport);alive(s);
+      if(recordedPointMatches(f,step.patch,step.x,step.y))return {x:step.x,y:step.y};
+      if(attempt<2)await sleep(180);
+    }
+    throw Error('Not enough stable detail matches this click after three checks. Replay paused without clicking. Restore the view and retry.');
   }
   if(step.target){const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p)throw Error('The recorded control is missing or covered. Restore the view, then Retry.');return p;}
   if(!step.patch)throw Error('No visual target was captured. Use the recorded position once only if the view matches.');

@@ -225,3 +225,18 @@ test('continuous wheel replay checks the start and rechecks after a gesture gap'
   assert.equal(events.length,2);assert(events.every(c=>c.params.modifiers===2&&c.params.deltaY===-10));
   await call('stop');
 });
+
+test('visual check retries transient frames before sending the saved click',async()=>{
+  const oldCapture=chrome.tabs.captureVisibleTab,oldBitmap=globalThis.createImageBitmap,oldCanvas=globalThis.OffscreenCanvas;
+  let captures=0;
+  const patch={width:8,height:8,offsetX:4,offsetY:4,data:Array.from({length:64},(_,i)=>(i*37)%256)};
+  chrome.tabs.captureVisibleTab=async()=>{captures++;return 'data:text/plain,test';};
+  globalThis.createImageBitmap=async()=>({width:2880,height:1514,close(){}});
+  globalThis.OffscreenCanvas=class{getContext(){return {drawImage(){},getImageData(){const data=new Uint8Array(720*379*4);if(captures>=3)for(let y=0;y<8;y++)for(let x=0;x<8;x++){const index=((56+y)*720+46+x)*4;data.fill(patch.data[y*8+x],index,index+3);}return {data};}};}};
+  try{
+    const imported=await call('import',{recording:recording([{...click[0],target:null,patch},click[1]])});
+    commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});await waitFor(v=>v.status.mode==='idle');
+    assert.equal(captures,3);
+    assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
+  }finally{await call('stop');chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
+});

@@ -4,6 +4,14 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Avatar and animation tolerance (v0.6.10)
+
+Fixed-position canvas replay can accept partially obscured references when multiple detailed regions still match at the recorded location. It requires at least four matching 8×8 regions, coverage in both directions and evidence near the click; blank areas and ambiguous repeating patterns do not establish alignment. If the first comparison fails, replay checks up to three frames before pausing. Named buttons still require the expected visible, enabled control under the saved position. This does not relocate clicks or disable checkpoint/viewport checks.
+
+Existing recordings use the updated check automatically. A view with insufficient unchanged detail still pauses; complete mission replay is not guaranteed. Private regression checks cover the observed start-icon, TV and file failures, including shifted and scaled negative examples.
+
+Personal recordings can be replaced from **Review / Share → Replace from JSON** while replay/recording is stopped. Replacement keeps the selected mission name and saves the prior recording as a separate **before repair** backup. Shared originals cannot be replaced this way.
+
 ## Camera recording and fixed-position replay (v0.6.9)
 
 Drag recording listens at the window capture phase and includes browser-coalesced movement samples. Horizontal/vertical wheel events and pinch-wheel modifiers are retained. Continuous wheel gestures verify alignment at their start, then replay their deltas; the next gesture or click checks alignment again. Game camera buttons are recorded as ordinary controls. Browser chrome zoom shortcuts are not supported.

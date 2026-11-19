@@ -82,3 +82,29 @@ test('fixed-position matching accepts faint detail but rejects flat or shifted p
   assert(sameWheelGesture(a,{...a,at:140}));
   for(const change of [{at:500},{x:80},{modifiers:0},{type:'pointerdown'}])assert(!sameWheelGesture(a,{...a,...change}));
 });
+
+test('partial visual check tolerates local occlusion but rejects wrong alignment and insufficient evidence',async()=>{
+  const {recordedPointMatches}=await import('../extension/core.js');
+  let seed=731;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed>>>24;};
+  const p={width:32,height:32,offsetX:16,offsetY:16,data:Array.from({length:1024},rand)};
+  const f={width:96,height:96,scaleX:1,scaleY:1,data:Array.from({length:9216},()=>20)};
+  // A local avatar or menu obscures half of the reference.
+  const partiallyVisible={...p,data:p.data.map((v,i)=>i%32<16?220:v)};
+  paint(f,partiallyVisible,32,32);
+  assert(recordedPointMatches(f,p,48,48));
+  for(const [x,y]of [[44,48],[52,48],[48,44],[48,52],[40,40]])assert(!recordedPointMatches(f,p,x,y));
+  assert(!recordedPointMatches({...f,data:Array(9216).fill(20)},p,48,48));
+  const sparse={...p,data:p.data.map((v,i)=>Math.floor(i/32)<8&&i%32>=8?v:220)};
+  paint(f,sparse,32,32);assert(!recordedPointMatches(f,p,48,48));
+  const zoom={...p,data:p.data.map((_,i)=>p.data[Math.min(31,Math.floor(Math.floor(i/32)*.8))*32+Math.min(31,Math.floor((i%32)*.8))])};
+  paint(f,zoom,32,32);assert(!recordedPointMatches(f,p,48,48));
+});
+
+test('partial visual check rejects repeating patterns as alignment evidence',async()=>{
+  const {recordedPointMatches}=await import('../extension/core.js');
+  const pattern=(x,y)=>((x%4)<2?40:200)+((y%4)<2?0:20);
+  const p={width:32,height:32,offsetX:16,offsetY:16,data:Array.from({length:1024},(_,i)=>pattern(i%32,Math.floor(i/32)))};
+  const f={width:96,height:96,scaleX:1,scaleY:1,data:Array.from({length:9216},(_,i)=>pattern(i%96,Math.floor(i/96)))};
+  for(let y=32;y<64;y++)for(let x=32;x<48;x++)f.data[y*96+x]=0;
+  assert(!recordedPointMatches(f,p,48,48));
+});

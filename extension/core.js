@@ -128,7 +128,7 @@ export function remainingMissionMs(started, now, minimumMs=MINIMUM_MISSION_MS) {
 }
 
 // Verify the recorded point locally; never guess a new camera transform.
-export function recordedPointMatches(frame,patch,x,y){
+function wholePointMatches(frame,patch,x,y){
   if(!patch)return false;
   const left=Math.round(x/frame.scaleX-patch.offsetX),top=Math.round(y/frame.scaleY-patch.offsetY);
   if(left<0||top<0||left+patch.width>frame.width||top+patch.height>frame.height)return false;
@@ -153,4 +153,38 @@ export function recordedPointMatches(frame,patch,x,y){
 export function sameWheelGesture(previous,step){
   return previous?.type==='wheel'&&step.type==='wheel'&&step.at>=previous.at&&step.at-previous.at<=180&&
     (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=4;
+}
+
+// Partial occlusion check: require multiple detailed regions at the original position.
+// Changed tiles may be avatars, menus or animation; flat background is never evidence.
+export function recordedPointMatches(frame,patch,x,y){
+  if(wholePointMatches(frame,patch,x,y))return true;
+  if(!patch||patch.width<16||patch.height<16)return false;
+  const left=Math.round(x/frame.scaleX-patch.offsetX),top=Math.round(y/frame.scaleY-patch.offsetY);
+  if(left<0||top<0||left+patch.width>frame.width||top+patch.height>frame.height)return false;
+  const tiles=[];
+  for(let ty=0;ty+8<=patch.height;ty+=8)for(let tx=0;tx+8<=patch.width;tx+=8){
+    const data=[];for(let j=0;j<8;j++)for(let i=0;i<8;i++)data.push(patch.data[(ty+j)*patch.width+tx+i]);
+    const mean=data.reduce((a,b)=>a+b,0)/64,variance=data.reduce((a,b)=>a+(b-mean)**2,0)/64;
+    if(variance>=70)tiles.push({x:tx,y:ty,data,mean,variance});
+  }
+  function matches(tile,dx=0,dy=0){
+    const ox=left+tile.x+dx,oy=top+tile.y+dy;
+    if(ox<0||oy<0||ox+8>frame.width||oy+8>frame.height)return false;
+    const data=[];for(let j=0;j<8;j++)for(let i=0;i<8;i++)data.push(frame.data[(oy+j)*frame.width+ox+i]);
+    const mean=data.reduce((a,b)=>a+b,0)/64;
+    let error=0,energy=0,covariance=0;
+    data.forEach((v,i)=>{error+=Math.abs(v-tile.data[i]);energy+=(v-mean)**2;covariance+=(v-mean)*(tile.data[i]-tile.mean);});
+    return error/64<=8&&energy>0&&covariance/Math.sqrt(energy*tile.variance*64)>=0.92;
+  }
+  const stable=tiles.filter(t=>matches(t)),required=Math.max(4,Math.ceil(Math.floor(patch.width/8)*Math.floor(patch.height/8)*0.25));
+  if(stable.length<required)return false;
+  if(new Set(stable.map(t=>t.x)).size<2||new Set(stable.map(t=>t.y)).size<2)return false;
+  if(!stable.some(t=>Math.hypot(t.x+4-patch.offsetX,t.y+4-patch.offsetY)<=16))return false;
+  // Repeated stripes/grids cannot prove alignment. Do not relocate the click.
+  for(let dy=-8;dy<=8;dy+=2)for(let dx=-8;dx<=8;dx+=2){
+    if(Math.hypot(dx,dy)<4)continue;
+    if(stable.every(t=>matches(t,dx,dy)))return false;
+  }
+  return true;
 }

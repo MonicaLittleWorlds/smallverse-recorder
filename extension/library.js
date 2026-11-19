@@ -57,7 +57,7 @@ for(const [id,key] of [['timerStart','missionStart'],['timerFinish','completionG
   current.timingReviewed=false;$('timingReviewed').checked=false;$('reviewed').checked=false;drawSteps();
 };
 function reviewImported(r){openReview(exportRecording(validateRecording(r),{notes:r.notes||''}));}
-function openReview(r){$('playbackDiagnostic').textContent='';void request('status').then(({status})=>{if(status.mode==='paused'&&status.name===r.name&&current?.id===r.id)$('playbackDiagnostic').textContent='Paused replay — '+status.message+'\n'+JSON.stringify(r.steps.slice(status.index,status.index+1).map((s,j)=>({step:status.index+j+1,type:s.type,target:s.target,x:s.x,y:s.y,buttons:s.buttons})),null,2);}).catch(()=>{});current=structuredClone(r);reviewOriginal=exportRecording(r,{notes:r.notes||''});$('approveShared').hidden=!r.source;$('save').textContent=r.source?'Save personal copy':'Save';$('sharedNotice').hidden=!r.source;$('missionName').value=r.name;$('notes').value=r.notes||'';$('reviewed').checked=false;$('reviewError').textContent='';current.minimumMs=r.minimumMs||180000;$('timingReviewed').checked=!!r.timingReviewed;$('minimumDisplay').textContent=`${Math.floor(current.minimumMs/60000)}:${String((current.minimumMs/1000)%60).padStart(2,'0')}`;drawSteps();drawTiming();$('review').showModal();}
+function openReview(r){$('playbackDiagnostic').textContent='';void request('status').then(({status})=>{if(status.mode==='paused'&&status.name===r.name&&current?.id===r.id)$('playbackDiagnostic').textContent='Paused replay — '+status.message+'\n'+JSON.stringify(r.steps.slice(status.index,status.index+1).map((s,j)=>({step:status.index+j+1,type:s.type,target:s.target,x:s.x,y:s.y,buttons:s.buttons})),null,2);}).catch(()=>{});current=structuredClone(r);reviewOriginal=exportRecording(r,{notes:r.notes||''});$('approveShared').hidden=!r.source;$('save').textContent=r.source?'Save personal copy':'Save';$('replace').hidden=!r.id||!!r.source;$('sharedNotice').hidden=!r.source;$('missionName').value=r.name;$('notes').value=r.notes||'';$('reviewed').checked=false;$('reviewError').textContent='';current.minimumMs=r.minimumMs||180000;$('timingReviewed').checked=!!r.timingReviewed;$('minimumDisplay').textContent=`${Math.floor(current.minimumMs/60000)}:${String((current.minimumMs/1000)%60).padStart(2,'0')}`;drawSteps();drawTiming();$('review').showModal();}
 function edited(){current.name=$('missionName').value.trim();current.notes=$('notes').value;current.minimumMs=current.minimumMs||180000;current.timingReviewed=$('timingReviewed').checked;validateRecording(current);if(current.timingReviewed)missionTiming(current);return current;}
 $('close').onclick=()=>$('review').close();
 $('save').onclick=async()=>{try{edited();const result=current.id?await request('save',{recording:current}):await request('import',{recording:current});current.id=result.id;delete current.source;$('approveShared').hidden=true;$('sharedNotice').hidden=true;$('save').textContent='Save';await refresh();$('reviewError').textContent=result.personalCopy?'Personal copy saved. Shared original is unchanged.':'Saved locally.';}catch(e){$('reviewError').textContent=e.message;}};
@@ -79,6 +79,28 @@ $('approveShared').onclick=async()=>{try{
   if(JSON.stringify(exportRecording(r,{notes:r.notes||''}))!==JSON.stringify(reviewOriginal))throw Error('You edited this version. Save a personal copy, or reopen the unchanged shared recording to approve it.');
   await request('approveShared',{id:r.id,hash:r.source.hash});await refresh();$('reviewError').textContent='This shared version is ready to select for replay.';
 }catch(e){$('reviewError').textContent=e.message;}};
+$('replace').onclick=()=>$('replacementFile').click();
+$('replacementFile').onchange=async e=>{
+  const file=e.target.files[0],id=current?.id;e.target.value='';
+  try{
+    if(!file)return;
+    if(!id||current.source)throw Error('Choose a saved personal recording to replace.');
+    if(file.size>25000000)throw Error('Recording exceeds 25 MB.');
+    $('replace').disabled=true;
+    const original=await request('get',{id});
+    const {status}=await request('status');
+    if(status.mode!=='idle')throw Error('Stop recording or replay before replacing a saved mission.');
+    const replacement=exportRecording(validateRecording(JSON.parse(await file.text())),{name:original.name,notes:''});
+    if(new URL(replacement.startURL).pathname!==new URL(original.startURL).pathname)throw Error('Replacement must use the same starting space.');
+    replacement.notes=String(JSON.parse(await file.text()).notes||original.notes||'').slice(0,4000);
+    if(replacement.timingReviewed)missionTiming(replacement);
+    await request('import',{recording:exportRecording(original,{name:(original.name+' — before repair').slice(0,120),notes:original.notes||''})});
+    const saved={...replacement,id,created:original.created};
+    await request('save',{recording:saved});
+    openReview(saved);await refresh();$('reviewError').textContent='Replaced locally. The original is saved as a separate “before repair” backup.';
+  }catch(error){$('reviewError').textContent=error.message;}
+  finally{$('replace').disabled=false;}
+};
 $('import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>25000000)throw Error('Recording exceeds 25 MB.');reviewImported(JSON.parse(await f.text()));}catch(e){$('error').textContent=e.message;}finally{$('import').value='';}};
 async function synchronize(force){
   $('loadShared').disabled=true;$('syncStatus').textContent='Syncing shared missions…';
