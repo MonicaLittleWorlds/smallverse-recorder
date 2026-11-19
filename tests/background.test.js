@@ -24,14 +24,15 @@ globalThis.chrome={
   }}
 };
 await import('../extension/background.js');
-const call=(kind,args={},sender={})=>new Promise((resolve,reject)=>listeners.message({kind,...args},sender,r=>r.ok?resolve(r.value):reject(Error(r.error))));
+const call=(kind,args={},sender={})=>new Promise((resolve,reject)=>listeners.message({kind,...(kind==='play'?{positionReplay:false}:{}),...args},sender,r=>r.ok?resolve(r.value):reject(Error(r.error))));
 const recording=steps=>({format:'smallverse-mission',version:1,name:'Test only',startURL:url,viewport:{width:1440,height:757},minimumMs:180000,timingReviewed:true,steps:[{type:'checkpoint',at:0,checkpoint:cp,missionStart:true},...steps.map((step,i)=>({...step,...(i===0?{completionGate:true}:{})}))]});
 const click=[{type:'pointerdown',at:0,x:100,y:120,button:'left',buttons:1,target:{tag:'button',text:'Search'}},{type:'pointerup',at:1,x:100,y:120,button:'left',buttons:0}];
 async function waitFor(predicate){for(let i=0;i<100;i++){const v=await call('status');if(predicate(v))return v;await delay(20);}throw Error('Timed out');}
 test('record, durable save, replay inputs, pause on missing targets, and stop cancellation',async()=>{
   await call('start',{tabId:1,name:'My recording'});
   const capture=commands.find(c=>c.method==='Page.captureScreenshot');
-  assert.equal(capture.params.fromSurface,false); // Must not reset emulation scale per frame.
+  assert.equal(capture.params.fromSurface,true); // Chrome rejects non-surface captures.
+  assert.deepEqual(capture.params.clip,{x:0,y:0,width:1440,height:757,scale:1});
   assert.equal(capture.params.captureBeyondViewport,false);
   await call('event',{step:click[0]},{tab:{id:2}}); // Different tab cannot append.
   await call('event',{step:{...click[0],url,at:10}},{tab:{id:1}});
@@ -182,4 +183,17 @@ test('loading notifications within SmallVerse do not stop recording or discard l
   await call('event',{step:{type:'text',at:50,url,value:'after loading',target:{tag:'input'}}},{tab:{id:1}});
   await call('stop');
   assert.equal((await call('get',{id})).steps.at(-1).value,'after loading');
+});
+
+test('position replay executes canvas clicks and drags without visual patches, preserving timer',async()=>{
+  autoClock=false;clock=0;
+  const moves=[{...click[0],target:null},{type:'pointermove',at:1,x:130,y:145,button:'none',buttons:1},{...click[1],at:2,x:130,y:145}];
+  const imported=await call('import',{recording:recording(moves)});
+  commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
+  await waitFor(v=>v.status.remainingMs===180000);assert(!commands.some(c=>c.method.startsWith('Input.')));
+  clock=180000;await waitFor(v=>v.status.mode==='idle');
+  const inputs=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
+  assert(inputs.some(p=>p.type==='mousePressed'&&p.x===100&&p.y===120));
+  assert(inputs.some(p=>p.type==='mouseMoved'&&p.x===130&&p.y===145&&p.buttons===1));
+  assert(inputs.some(p=>p.type==='mouseReleased'&&p.x===130&&p.y===145));autoClock=true;
 });

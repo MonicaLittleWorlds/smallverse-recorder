@@ -151,3 +151,9 @@ Type any part of a mission name in the recorder search field, select a matching 
 ### Recording interruptions
 
 A lost debugger connection no longer ends recording: clicks, typing and objective changes keep saving, and the toolbar warns that visual capture is unavailable. Unlabelled canvas clicks made during that interval may require manual target review on replay. An active recording also sends a heartbeat while waiting. Stop or Escape ends recording; closing the game tab, leaving SmallVerse, reaching the step limit, or closing Chrome still interrupts it. A generic loading notification no longer stops recording. A real page reload can still lose inputs during the reload; contentReady restores the toolbar afterward. Keep the game page open. Continue recording can append at a matching saved objective and creates a backup first; it cannot reconstruct missing gameplay.
+
+### Replay modes and capture
+
+Recorded-position playback is the default: canvas clicks and drags use saved coordinates without per-click confirmation. Named controls still resolve by their recorded labels; typing, Enter and wheel events replay in sequence. Objective checks and the three-minute hold remain enabled. Match the initial camera, zoom, avatar position and mission state. Uncheck the position option to use visual matching for canvas targets. Missing or ambiguous targets then pause playback.
+
+Version 0.6.4 fixes Chrome rejecting non-surface screenshots. Capture uses the supported surface mode with an explicit viewport clip and captureBeyondViewport disabled. A live Chrome capture check succeeded at 720×379 matching resolution on November 19, 2026. Capture errors are now shown while inputs continue saving. Old recordings with zero visual targets cannot gain those missing images retroactively. Full gameplay replay and long-running capture stability remain to be verified.

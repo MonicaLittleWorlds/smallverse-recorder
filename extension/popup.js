@@ -18,8 +18,9 @@ async function refresh(){
 }
 function action(id,fn){$(id).onclick=async()=>{try{$('error').textContent='';$(id).disabled=true;await fn();await refresh();}catch(e){$('error').textContent=e.message;await refresh().catch(()=>{});}};}
 action('record',async()=>{if(!$('name').value.trim())throw Error('Give this mission a name first.');await request('start',{tabId,name:$('name').value});window.close();});
-action('play',async()=>{await request('play',{tabId,id:$('saved').value});window.close();});
+action('play',async()=>{await request('play',{tabId,id:$('saved').value,positionReplay:$('positionReplay').checked});window.close();});
 action('resumeRecording',async()=>{await request('resumeRecording',{tabId,id:$('saved').value});window.close();});
+action('captureCheck',async()=>{try{const r=await request('captureCheck',{tabId});$('error').textContent=r.message;}finally{$('captureCheck').disabled=false;}});
 action('stop',()=>request('stop'));action('pause',()=>request('pause'));
 action('coordinates',async()=>{if(confirm('This bypasses visual matching for one click. Only proceed if the game view matches the recording.'))await request('coordinates');});
 $('ready').onchange=refresh;
