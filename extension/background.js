@@ -16,10 +16,10 @@ const library=async()=>({...await localLibrary(),...((await chrome.storage.local
 async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await localLibrary();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
 function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null}:lastStatus;}
 async function notify(){
-  const s=snapshot();await chrome.storage.session.set({status:s});
+  const s=snapshot();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -282,7 +282,7 @@ async function handle(m,sender){
     for(const previous of session.recording.steps)delete previous.missionStart;
     session.recording.steps.push(step);await put(session.recording);await notify();return {ok:true};
   }
-  if(m.kind==='contentReady')return {ok:true};
+  if(m.kind==='contentReady'){if(session?.mode==='recording'&&sender.tab?.id===session.tabId)await notify();return {ok:true};}
   if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
   if(m.kind==='sync')return synchronize(!!m.force);
   if(m.kind==='publisherStatus')return publisherStatus();
@@ -334,14 +334,29 @@ async function handle(m,sender){
   }
   throw Error('Unknown command.');
 }
+const recoveredRecording=(async()=>{
+  const saved=(await chrome.storage.session.get('activeRecording')).activeRecording;
+  if(!saved)return;
+  const recording=(await localLibrary())[saved.id];if(!recording)return;
+  try{await ensureGame(saved.tabId);validateRecording(recording);}catch{return;}
+  session={...saved,recording,mode:'recording',index:0,heldKeys:new Map(),buttons:0,visualDisconnected:true,message:'Recording restored. Inputs are saving; visual capture needs reconnection.'};
+  await notify();
+})();
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
-  const action=()=>handle(m,sender);
+  const action=async()=>{await recoveredRecording;return handle(m,sender);};
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
   const p=['start','resumeRecording','play','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
 chrome.commands.onCommand.addListener(name=>{if(name==='stop')handle({kind:'stop'},{}).catch(()=>{});else if(name==='pause')pause().catch(()=>{});});
-chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){const s=session;session=null;s.cancelled=true;clearInterval(frameTimer);frame=null;lastStatus={mode:'idle',message:'Chrome disconnected the recorder. Saved steps remain in your library.'};page(tabId,{kind:'mode',mode:'idle'}).catch(()=>{});notify();}});
+chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){
+  const s=session;clearInterval(frameTimer);frameTimer=null;frame=null;
+  if(s.mode==='recording'){
+    s.visualDisconnected=true;s.message='Still recording clicks and typing. Visual capture disconnected; new canvas clicks may need manual target review.';
+    void notify();return;
+  }
+  session=null;s.cancelled=true;lastStatus={mode:'idle',message:'Chrome disconnected replay. Saved steps remain in your library.'};page(tabId,{kind:'mode',mode:'idle'}).catch(()=>{});void notify();
+}});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(session?.tabId===tabId&&(change.status==='loading'||change.url&&!gameURL(change.url)))void stop('Navigation stopped this session. Recording saved; separate recordings are required across page reloads.');});
 chrome.tabs.onRemoved.addListener(tabId=>{if(session?.tabId===tabId)void stop('Game tab closed. Recording saved.');});
 

@@ -11,7 +11,7 @@ function setup(){
     matches(){return this.tagName==='INPUT';}getAttribute(attr){return attr==='placeholder'?'Type here to chat':null;}append(...nodes){this.children.push(...nodes);}querySelector(){return null;}querySelectorAll(){return [];}getClientRects(){return [1];}
   }
   const document={documentElement:new Element(),createElement:tag=>new Element(tag.toUpperCase()),addEventListener:(type,fn)=>{listeners[type]=fn;},querySelectorAll:()=>[]};
-  const sandbox={Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
+  const sandbox={Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
   vm.runInNewContext(source,sandbox);
   const message=m=>{let out;handlers[0](m,{},v=>out=v);return out;};
   message({kind:'mode',mode:'recording',started:Date.now()});messages.length=0;

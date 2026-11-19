@@ -159,3 +159,15 @@ test('continue recording preserves saved prefix and backup; refuses mismatched o
   await call('stop');const after=await call('get',{id:imported.id});
   assert.deepEqual(after.steps.slice(0,before.steps.length),before.steps);assert.equal(after.steps.at(-1).value,'continued');assert(after.steps.at(-1).at>=before.steps.at(-1).at);
 });
+
+test('debugger disconnect keeps recording and saves subsequent inputs until explicit stop',async()=>{
+  await call('start',{tabId:1,name:'Disconnect recovery'});
+  const id=temporary.activeRecording.id;
+  listeners.detach({tabId:1});
+  assert.equal((await call('status')).status.mode,'recording');
+  await call('event',{step:{type:'text',at:10,url,value:'after disconnect',target:{tag:'input'}}},{tab:{id:1}});
+  await call('contentReady',{}, {tab:{id:1}});
+  await call('stop');
+  assert.equal((await call('get',{id})).steps.at(-1).value,'after disconnect');
+  assert.equal(temporary.activeRecording,null);
+});

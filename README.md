@@ -147,3 +147,7 @@ The service is deployed and GitHub sign-in was verified in the installed Chrome 
 ### Finding saved missions
 
 Type any part of a mission name in the recorder search field, select a matching mission, confirm the starting state and choose Replay. Search ignores capitalization and includes active shared missions. The library also searches personal and shared recordings by name. No results means Replay stays disabled.
+
+### Recording interruptions
+
+A lost debugger connection no longer ends recording: clicks, typing and objective changes keep saving, and the toolbar warns that visual capture is unavailable. Unlabelled canvas clicks made during that interval may require manual target review on replay. An active recording also sends a heartbeat while waiting. Stop or Escape ends recording; closing the game tab, navigating/reloading, reaching the step limit, or closing Chrome still interrupts it. Keep the game page open. Continue recording can append at a matching saved objective and creates a backup first; it cannot reconstruct missing gameplay.

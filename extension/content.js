@@ -110,5 +110,7 @@
       reply({ok:true});
     }
   });
+  // Keep the recording worker awake even while the player waits on a task.
+  setInterval(()=>{if(mode==='recording')send({kind:'contentReady'});},10000);
   send({kind:'contentReady'});
 })();
