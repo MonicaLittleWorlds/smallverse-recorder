@@ -155,8 +155,8 @@ async function waitCheckpoint(s,expected,timeout=15000){
   }
 }
 async function point(s,step){
-  if(step.target){const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p)throw Error('The recorded control is missing or covered. Restore the view, then Retry.');return p;}
   if(s.positionReplay||s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
+  if(step.target){const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p)throw Error('The recorded control is missing or covered. Restore the view, then Retry.');return p;}
   if(!step.patch)throw Error('No visual target was captured. Use the recorded position once only if the view matches.');
   const f=await capture(s.tabId,s.recording.viewport);alive(s);
   const match=matchPatch(f,step.patch);
@@ -168,7 +168,10 @@ async function execute(s,step){
     if(s.buttons||s.heldKeys.size)throw Error('Cannot handle a popup during a held input.');
     s.popupStates??={};const state=s.popupStates[s.index]??={};
     const outcome=await runOptionalPopup(step,{
-      probe:()=>gate(s),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep,state,
+      probe:()=>gate(s),resolve:target=>{
+        if(s.positionReplay){const down=step.originalSteps?.find(x=>x.type==='pointerdown');if(!down||!Number.isFinite(down.x)||!Number.isFinite(down.y))throw Error('This optional popup has no saved click position. Review its recording.');return {x:down.x,y:down.y};}
+        return page(s.tabId,{kind:'resolve',target});
+      },sleep,state,
       click:async p=>{
         const observed=await gate(s);alive(s);const choice=popupDecision(step,observed);
         if(choice==='unknown')throw Error('Unfamiliar dialog. Replay paused without clicking it.');

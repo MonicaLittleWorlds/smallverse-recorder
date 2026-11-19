@@ -197,3 +197,13 @@ test('position replay executes canvas clicks and drags without visual patches, p
   assert(inputs.some(p=>p.type==='mouseMoved'&&p.x===130&&p.y===145&&p.buttons===1));
   assert(inputs.some(p=>p.type==='mouseReleased'&&p.x===130&&p.y===145));autoClock=true;
 });
+
+test('position replay uses saved button coordinates even when the labeled button cannot resolve',async()=>{
+  targetFound=false;commands.length=0;
+  const imported=await call('import',{recording:recording(click)});
+  await call('play',{tabId:1,id:imported.id,positionReplay:true});
+  await waitFor(v=>v.status.mode==='idle');
+  const down=commands.find(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed');
+  assert.equal(down.params.x,100);assert.equal(down.params.y,120);
+  targetFound=true;
+});
