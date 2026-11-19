@@ -39,7 +39,9 @@ async function attach(tabId,viewport){
 async function detach(tabId){await command(tabId,'Emulation.clearDeviceMetricsOverride').catch(()=>{});await chrome.debugger.detach({tabId}).catch(()=>{});}
 async function capture(tabId,viewport){
   const capturedAt=Date.now();
-  const {data}=await command(tabId,'Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:false});
+  // Capture the existing view. Surface capture can temporarily reset emulation
+  // scale for every frame, visibly shrinking/expanding the game in Chrome.
+  const {data}=await command(tabId,'Page.captureScreenshot',{format:'png',fromSurface:false,captureBeyondViewport:false});
   const blob=await (await fetch('data:image/png;base64,'+data)).blob();
   const bitmap=await createImageBitmap(blob);
   // Matching uses half-resolution pixels; all replay coordinates remain CSS pixels.
@@ -234,7 +236,8 @@ async function pause(){
 }
 async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
-  const fromPage=!!sender.tab;
+  const extensionControl=sender.url&&['popup.html','library.html'].some(path=>sender.url===chrome.runtime.getURL(path));
+  const fromPage=!!sender.tab&&!extensionControl;
   if(fromPage&&!['stop','contentReady'].includes(m.kind))throw Error('This command is only available in the extension controls.');
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};
   if(m.kind==='contentReady')return {ok:true};

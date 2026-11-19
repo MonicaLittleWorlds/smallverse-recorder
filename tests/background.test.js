@@ -9,7 +9,7 @@ const event=name=>({addListener:fn=>listeners[name]=fn});
 const storage=object=>({get:async key=>structuredClone({[key]:object[key]}),set:async values=>Object.assign(object,structuredClone(values))});
 globalThis.chrome={
   storage:{local:storage(local),session:storage(temporary)},
-  runtime:{onMessage:event('message'),onInstalled:event('installed'),onStartup:event('startup')},
+  runtime:{getURL:path=>'chrome-extension://recorder/'+path,onMessage:event('message'),onInstalled:event('installed'),onStartup:event('startup')},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
   commands:{onCommand:event('command')},
   alarms:{create:async()=>{},onAlarm:event('alarm')},
@@ -30,6 +30,9 @@ const click=[{type:'pointerdown',at:0,x:100,y:120,button:'left',buttons:1,target
 async function waitFor(predicate){for(let i=0;i<100;i++){const v=await call('status');if(predicate(v))return v;await delay(20);}throw Error('Timed out');}
 test('record, durable save, replay inputs, pause on missing targets, and stop cancellation',async()=>{
   await call('start',{tabId:1,name:'My recording'});
+  const capture=commands.find(c=>c.method==='Page.captureScreenshot');
+  assert.equal(capture.params.fromSurface,false); // Must not reset emulation scale per frame.
+  assert.equal(capture.params.captureBeyondViewport,false);
   await call('event',{step:click[0]},{tab:{id:2}}); // Different tab cannot append.
   await call('event',{step:{...click[0],url,at:10}},{tab:{id:1}});
   await call('event',{step:{...click[1],url,at:20}},{tab:{id:1}});
@@ -120,4 +123,14 @@ test('skipping an absent popup advances to next objective but preserves the thre
   clock=180000;await waitFor(v=>v.status.mode==='idle');
   assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
   autoClock=true;
+});
+
+
+test('library tab can list and delete recordings while game tabs cannot',async()=>{
+  const sender={url:'chrome-extension://recorder/library.html',tab:{id:9}};
+  const saved=await call('import',{recording:recording(click)});
+  assert((await call('status',{},sender)).recordings.some(r=>r.id===saved.id));
+  await assert.rejects(call('delete',{id:saved.id},{url,tab:{id:1}}),/extension controls/);
+  await call('delete',{id:saved.id},sender);
+  assert(!(await call('status',{},sender)).recordings.some(r=>r.id===saved.id));
 });
