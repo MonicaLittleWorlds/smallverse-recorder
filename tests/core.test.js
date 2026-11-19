@@ -108,3 +108,9 @@ test('partial visual check rejects repeating patterns as alignment evidence',asy
   for(let y=32;y<64;y++)for(let x=32;x<48;x++)f.data[y*96+x]=0;
   assert(!recordedPointMatches(f,p,48,48));
 });
+
+test('radial wait survives export and cannot be attached to arbitrary canvas clicks',()=>{
+ const r=recording();r.steps=[{type:'pointerdown',at:0,x:100,y:100,button:'left',buttons:1,target:{tag:'button',text:'*'},waitForRadial:true}];
+ assert.equal(exportRecording(r).steps[0].waitForRadial,true);
+ r.steps[0].target=null;assert.throws(()=>validateRecording(r),/radial/);
+});

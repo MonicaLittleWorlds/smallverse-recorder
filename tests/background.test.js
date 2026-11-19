@@ -266,3 +266,21 @@ test('explicit objective resume rejects wrong state and resumes a later verified
   assert(commands.some(c=>c.method==='Input.insertText'&&c.params.text==='bob, open the gates'));
   await call('stop');
 });
+
+test('radial finishing click waits for minimum time then uses live coordinates for press and release',async()=>{
+  autoClock=false;clock=0;targetFound=true;cp={title:'Last task',text:'Use the car'};
+  const down={...click[0],target:{tag:'button',text:'*'},waitForRadial:true,checkpoint:cp,at:30000,completionGate:true};
+  const r=recording([{...click[0],at:0,checkpoint:cp},{...click[1],at:1},down,{...click[1],at:30001}]);
+  delete r.steps[1].completionGate;
+  const imported=await call('import',{recording:r});commands.length=0;
+  await call('play',{tabId:1,id:imported.id,positionReplay:true});
+  try{
+    await waitFor(v=>v.status.remainingMs===180000);
+    assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
+    clock=180000;await waitFor(v=>v.status.mode==='idle');
+    const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
+    const lastPress=events.filter(c=>c.type==='mousePressed').at(-1);
+    assert.equal(lastPress.x,150);assert.equal(lastPress.y,160);
+    assert.equal(events.at(-1).type,'mouseReleased');assert.equal(events.at(-1).x,150);assert.equal(events.at(-1).y,160);
+  }finally{await call('stop');autoClock=true;}
+});

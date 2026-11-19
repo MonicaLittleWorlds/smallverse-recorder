@@ -1,3 +1,4 @@
+import {waitForRadialControl} from './radial.js';
 import {playbackProgress,restorePlayback,expectedCheckpoint,recoveryObjectives,verifyRecoveryObjective} from './playback-state.js';
 import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
@@ -171,6 +172,10 @@ async function waitCheckpoint(s,expected,timeout=15000){
   }
 }
 async function point(s,step){
+  if(step.waitForRadial){
+    if(s.index>=s.timing.finish)await waitMinimum(s);
+    return waitForRadialControl(step,{probe:()=>gate(s),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep,anchor:s.lastPoint||s.recording.steps.slice(0,s.index).reverse().find(x=>x.type==='pointerup')});
+  }
   if(s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
   if(s.positionReplay){
     if(step.target){
@@ -263,7 +268,7 @@ async function run(s){
   while(session===s&&s.index<s.recording.steps.length){
     try{
       const step=s.recording.steps[s.index];
-      const delay=s.skipNextCheckpointDelay&&step.type==='checkpoint'?0:Math.max(0,step.at-(s.recording.steps[s.index-1]?.at||0));
+      const delay=step.waitForRadial||(s.skipNextCheckpointDelay&&step.type==='checkpoint')?0:Math.max(0,step.at-(s.recording.steps[s.index-1]?.at||0));
       s.skipNextCheckpointDelay=false;
       // Preserve recorded timing, including long movement waits. Pauses do not consume it.
       let remaining=delay;while(remaining>0){await gate(s);const tick=Math.min(remaining,100);await sleep(tick);remaining-=tick;}

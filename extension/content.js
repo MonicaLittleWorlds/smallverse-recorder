@@ -67,7 +67,9 @@
         if(samples.at(-1).clientX===e.clientX&&samples.at(-1).clientY===e.clientY)return;
       }
     }
-    emit({type,clickCount,x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:target(e.target),checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
+    const descriptor=type==='pointerdown'?target(e.target):null;
+    const waitForRadial=descriptor?.tag==='button'&&!descriptor.dialog&&[descriptor.aria,descriptor.title,descriptor.text].some(v=>v==='*');
+    emit({type,clickCount,...(waitForRadial?{waitForRadial:true}:{}),x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:descriptor,checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
   },true);
   window.addEventListener('wheel',e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
