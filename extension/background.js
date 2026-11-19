@@ -1,4 +1,4 @@
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS} from './core.js';
 const STANDARD={width:1440,height:757,dpr:1};
 const ROOT='https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/main/';
 let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), frameTimer=null, frame=null, captureBusy=false, storeQueue=Promise.resolve();
@@ -8,12 +8,12 @@ const page=(tabId,m)=>chrome.tabs.sendMessage(tabId,m);
 const command=(tabId,method,params={})=>chrome.debugger.sendCommand({tabId},method,params);
 const library=async()=> (await chrome.storage.local.get('recordings')).recordings||{};
 async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await library();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
-function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId}:lastStatus;}
+function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null}:lastStatus;}
 async function notify(){
   const s=snapshot();await chrome.storage.session.set({status:s});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -57,7 +57,7 @@ function startFrames(s){
 async function startRecord(tabId,name){
   if(session)throw Error('Stop the current session first.');
   const tab=await ensureGame(tabId),p=await attach(tabId,STANDARD);
-  const r={format:FORMAT,version:VERSION,id:crypto.randomUUID(),name:String(name||'New mission').trim().slice(0,120)||'New mission',created:new Date().toISOString(),startURL:tab.url,viewport:STANDARD,notes:'',steps:[]};
+  const r={format:FORMAT,version:VERSION,id:crypto.randomUUID(),name:String(name||'New mission').trim().slice(0,120)||'New mission',created:new Date().toISOString(),startURL:tab.url,viewport:STANDARD,notes:'',minimumMs:MINIMUM_MISSION_MS,timingReviewed:false,steps:[]};
   session={tabId,mode:'recording',started:Date.now(),recording:r,message:'Recording inputs and objective changes.',index:0,heldKeys:new Map(),buttons:0};
   if(p.checkpoint.title)r.steps.push({type:'checkpoint',at:0,checkpoint:p.checkpoint,url:tab.url});
   try{frame=await capture(tabId,STANDARD);}catch{frame=null;}
@@ -73,6 +73,11 @@ async function ingest(sender,step,preFrame){
     else step.visualUnavailable=true;
   }
   step.at=Math.max(step.at,s.recording.steps.at(-1)?.at||0);
+  if(step.type==='pointerdown'&&/accept this mission/i.test([step.target?.aria,step.target?.title,step.target?.text].join(' '))){s.acceptedFrom=step.checkpoint;}
+  if(s.acceptedFrom&&step.type==='checkpoint'&&step.checkpoint?.title&&!checkpointEqual(s.acceptedFrom,step.checkpoint)){
+    if(!s.recording.steps.some(x=>x.missionStart))step.missionStart=true;
+    s.acceptedFrom=null;
+  }
   s.recording.steps.push(step);
   await put(s.recording);await notify();
 }
@@ -146,6 +151,18 @@ async function execute(s,step){
     if(down)s.heldKeys.set(step.code,step);else s.heldKeys.delete(step.code);
   }
 }
+async function waitMinimum(s){
+  if(s.buttons||s.heldKeys.size)throw Error('Cannot wait during a held input. Review the finish marker.');
+  while(true){
+    await gate(s);
+    const remaining=remainingMissionMs(s.missionStarted,performance.now(),s.timing.minimumMs);
+    s.waitRemaining=remaining;
+    if(remaining<=0){s.waitRemaining=null;s.message='Minimum mission time reached. Rechecking the next action.';await notify();return;}
+    const seconds=Math.ceil(remaining/1000);
+    if(s.lastWaitSecond!==seconds){s.lastWaitSecond=seconds;s.message=`Waiting ${seconds}s before the finishing action (${s.timing.minimumMs/60000}-minute minimum).`;await notify();}
+    await sleep(Math.min(remaining,100));
+  }
+}
 async function run(s){
   while(session===s&&s.index<s.recording.steps.length){
     try{
@@ -153,7 +170,11 @@ async function run(s){
       const delay=Math.max(0,step.at-(s.recording.steps[s.index-1]?.at||0));
       // Preserve recorded timing, including long movement waits. Pauses do not consume it.
       let remaining=delay;while(remaining>0){await gate(s);const tick=Math.min(remaining,100);await sleep(tick);remaining-=tick;}
-      await execute(s,step);alive(s);s.index++;
+      if(s.index===s.timing.finish)await waitMinimum(s);
+      await execute(s,step);alive(s);
+      // Start only after the recorded objective has actually been observed in replay.
+      if(s.index===s.timing.start&&s.missionStarted===null)s.missionStarted=performance.now();
+      s.index++;
       if(s.pauseRequested&&!s.buttons&&!s.heldKeys.size){s.pauseRequested=false;s.mode='paused';s.message='Paused. Resume when ready.';}
       await notify();
     }catch(e){
@@ -167,10 +188,10 @@ async function run(s){
 }
 async function play(tabId,id){
   if(session)throw Error('Stop the current session first.');
-  const r=(await library())[id];validateRecording(r);
+  const r=(await library())[id];validateRecording(r);const timing=missionTiming(r);
   const tab=await ensureGame(tabId);if(!sameSpace(tab.url,r.startURL))throw Error('Open the recording’s starting space before replay.');
   await attach(tabId,r.viewport);
-  session={mode:'playing',tabId,recording:r,index:0,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
+  session={mode:'playing',tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
 }
 async function pause(){
   if(!session||session.mode==='recording')throw Error('Pause is available during replay. Stop saves a recording.');

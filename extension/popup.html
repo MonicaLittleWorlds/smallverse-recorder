@@ -1,11 +1,12 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head><body class="popup"><main>
-<div class="eyebrow">SmallVerse · Mission recorder</div><h1>Play once.<br>Save the steps.</h1>
-<p class="muted">Record on a 1440 × 757 game view. Replay waits for your recorded mission checkpoints.</p>
-<div class="card"><div id="status">Loading…</div><small id="message"></small></div>
-<section id="new"><label for="name">Mission name</label><input id="name" maxlength="120" placeholder="Easter Island"><button id="record" class="primary">● Start recording</button></section>
-<section id="replay"><label for="saved">Saved mission</label><select id="saved"></select><label><input type="checkbox" id="ready">I’m at the recorded starting position, zoom, camera direction and mission state.</label><button id="play">▶ Replay selected</button></section>
-<div class="row" style="margin-top:18px"><button id="pause">Pause / Resume</button><button id="stop" class="danger">■ Stop</button></div>
-<button id="coordinates" hidden style="margin-top:10px">Use recorded position once</button>
-<p id="error" role="alert"></p><p><a href="library.html" target="_blank">Open library & sharing ↗</a></p>
-<small>Escape or Alt+Shift+S stops. Chrome shows a debugging banner while the recorder controls the game. Your recordings stay local until exported.</small>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head>
+<body class="popup"><main>
+<header class="row between"><h1>Mission recorder</h1><span class="version">0.2</span></header>
+<div class="status-line" aria-live="polite"><strong id="status">Loading…</strong><small id="message"></small></div>
+<section id="new"><label for="name">New recording</label><div class="input-row"><input id="name" maxlength="120" placeholder="Mission name"><button id="record" class="primary">Record</button></div></section>
+<section id="replay"><label for="saved">Saved mission</label><select id="saved"></select><label class="check"><input type="checkbox" id="ready">Starting position, zoom and mission state match.</label><div class="row"><button id="play" class="primary">Replay</button><button id="pause">Pause / Resume</button><button id="stop">Stop</button></div></section>
+<div class="timing-line"><span>Minimum mission time</span><strong>3:00</strong></div>
+<small>Replay holds before the marked finishing action. Set the timer markers in Review.</small>
+<button id="coordinates" hidden>Use recorded position once</button>
+<p id="error" role="alert"></p><footer class="row between"><a href="library.html" target="_blank">Mission library</a><span>Esc to stop</span></footer>
 <script type="module" src="popup.js"></script></main></body></html>

@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.1 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.2 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -21,9 +21,25 @@ There is no build step, paid service, API key, or server. Node.js is only needed
 3. The game is rendered at **1440 × 757 CSS pixels**, based on the original user's game view. Smaller browser windows fit that game view into their available space. Display pixel density is normalized to 1 for screenshot matching; the physical monitor resolution does not need to match.
 4. Play normally. Mouse presses/releases, dragging, wheel input, keyboard actions, game text entry, and objective dialog changes are saved. The objective's Continue button does **not** need to be clicked unless the game actually requires it.
 5. Use the small **Stop** control, **Escape**, or **Alt+Shift+S**. Steps save locally as you play.
-6. Open **Library & sharing → Review / Export**. Add starting instructions, in-game zoom, camera direction, prerequisites, and any timing constraints. Review text and visual patches.
+6. Open **Mission library → Review / Export**. Add starting instructions, in-game zoom, camera direction, prerequisites, and any timing constraints. Review text and visual patches.
 
 Only record intended gameplay. Game chat typing is recorded because some missions require phrases; private messages typed during recording would also be captured. Password and common payment fields are excluded, but the recorder cannot recognize every possible secret typed into ordinary chat.
+
+## Three-minute minimum
+
+Replay requires **180 seconds minimum** from a verified post-acceptance objective to the marked finishing action. It uses a monotonic elapsed-time clock. If the finishing action is reached at 2:40, replay waits 20 seconds, then rechecks the objective/target before sending that action. If the minimum has already elapsed, no extra delay is added. Pauses count toward elapsed mission time, but a paused replay does not resume itself.
+
+In **Review**, select:
+
+1. **Start timer after this objective**: the first objective visible after mission acceptance. A click on a labeled `Accept this mission` control can suggest the subsequent objective automatically; verify it.
+2. **Wait before this action**: an input that could complete the mission. For an arrival trigger, choose the movement that enters the final area. Do not select a reward dialog or an action after completion.
+3. Confirm **These markers are correct for this mission**, then Save.
+
+The recorder does not infer the finishing trigger from watching pixels. Correct markers are necessary; there is no claim of a server-verified timer. Start is deliberately conservative: the clock starts after the selected objective is observed, not before mission acceptance. If recording began mid-mission, select a known active objective and replay waits a fresh three minutes from that point.
+
+Missing/unreviewed/invalid markers block replay. Removing a marked step requires setup again. The hold is before a complete input action, never in the middle of a pressed mouse/key gesture. Stop cancels the hold. Coordinate fallback cannot skip the timer.
+
+New exports use recording format **2**, including the timing markers. Version 1 files can be imported, but need timer setup before replay. Older v0.1 extensions reject format 2 rather than silently ignoring its timing requirements; update the extension to share these recordings.
 
 ## Replay
 
@@ -41,7 +57,7 @@ Only record intended gameplay. Game chat typing is recorded because some mission
 Recordings stay in Chrome local storage until deliberately exported. The repository includes a public [`recordings/`](recordings/) catalog, initially empty. There is no recording from the initial observational session to upload.
 
 - Review every typed entry, mission text, visual patch, and space URL before checking the export box.
-- **Export reviewed JSON** downloads a portable recording. It contains no local recording ID, full screenshot, authentication cookie, or GitHub credential.
+- **Export JSON** downloads a portable recording. It contains no local recording ID, full screenshot, authentication cookie, or GitHub credential.
 - Follow the [publishing guide](recordings/README.md) to upload the JSON and add it to `recordings/index.json`.
 - Other users select **Browse shared missions → Download to review → Save locally**, or import a JSON file directly.
 - Recordings are data, never executable JavaScript. Downloads do not automatically run. The extension needs no GitHub write token; publication uses GitHub's normal authenticated website or a Git client.
@@ -79,7 +95,7 @@ npm run check
 npm test
 ```
 
-No npm dependencies are required. Tests exercise content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
+No npm dependencies are required. Nineteen tests exercise the three-minute hold (including cancellation, pause and fallback), marker validation/portability, content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
 
 - `extension/content.js`: input capture and DOM checkpoint/target extraction.
 - `extension/background.js`: capture, persistence, viewport, playback and sharing reads.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gameURL,sameSpace,validateRecording,exportRecording,checkpointEqual,matchPatch} from '../extension/core.js';
+import {gameURL,sameSpace,validateRecording,exportRecording,checkpointEqual,matchPatch,missionTiming,remainingMissionMs,timingCandidates} from '../extension/core.js';
 const recording=()=>({format:'smallverse-mission',version:1,name:'Demo mission',startURL:'https://smallverse.app/space/easterisland',viewport:{width:1440,height:757},steps:[]});
 test('only exact SmallVerse HTTPS game pages are allowed',()=>{
   assert.equal(gameURL('https://smallverse.app/space/easterisland'),true);
@@ -42,3 +42,20 @@ test('recordings round-trip without code execution fields',()=>{
   const r=recording();r.steps=[{type:'pointerdown',at:1,x:100,y:100,button:'left',buttons:1,clickCount:2},{type:'pointerup',at:40,x:100,y:100,button:'left',buttons:0,clickCount:2}];
   assert.deepEqual(validateRecording(JSON.parse(JSON.stringify(exportRecording(r)))).steps,r.steps);
 });
+
+test('mission timer waits only the remaining time, with no early completion',()=>{
+  assert.equal(remainingMissionMs(5000,165000),20000);
+  assert.equal(remainingMissionMs(5000,184999),1);
+  assert.equal(remainingMissionMs(5000,185000),0);
+  assert.equal(remainingMissionMs(5000,250000),0);
+  assert.throws(()=>remainingMissionMs(null,250000));
+});
+test('timing setup requires reviewed ordered markers at neutral input boundaries',()=>{
+  const r=recording();r.timingReviewed=true;r.steps=[{type:'checkpoint',at:0,checkpoint:{title:'First objective',text:'After acceptance'},missionStart:true},{type:'pointerdown',at:10,x:1,y:1,buttons:1,completionGate:true},{type:'pointerup',at:11,x:1,y:1,buttons:0}];
+  assert.deepEqual(missionTiming(r),{start:0,finish:1,minimumMs:180000});
+  assert.deepEqual(timingCandidates(r.steps).finishes,[1]);
+  const shared=exportRecording(r);assert.equal(shared.version,2);assert.equal(shared.steps[1].completionGate,true);assert.equal(shared.minimumMs,180000);assert.equal(shared.timingReviewed,true);
+  delete r.steps[1].completionGate;r.steps[2].completionGate=true;assert.throws(()=>missionTiming(r),/invalid/);
+  r.steps.splice(0,1);assert.throws(()=>missionTiming(r),/Review this mission/);
+});
+test('imports reject minimums below three minutes',()=>{const r=recording();r.minimumMs=179999;assert.throws(()=>validateRecording(r),/3 and 60/);});

@@ -1,5 +1,6 @@
 export const FORMAT = 'smallverse-mission';
-export const VERSION = 1;
+export const VERSION = 2;
+export const MINIMUM_MISSION_MS = 180000;
 export const MAX_STEPS = 20000;
 export const clean = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 export function gameURL(url) {
@@ -13,11 +14,12 @@ export function checkpointEqual(a, b) { return clean(a?.title) === clean(b?.titl
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 export function validateRecording(r) {
   const fail = message => { throw new Error(message); };
-  if (!r || r.format !== FORMAT || r.version !== VERSION) fail('Unsupported recording format.');
+  if (!r || r.format !== FORMAT || ![1, VERSION].includes(r.version)) fail('Unsupported recording format.');
   if (typeof r.name !== 'string' || !r.name.trim() || r.name.length > 120) fail('Invalid mission name.');
   if (!gameURL(r.startURL)) fail('Recording must start on a SmallVerse space.');
   if (!r.viewport || !finite(r.viewport.width) || !finite(r.viewport.height) || r.viewport.width < 100 || r.viewport.height < 100 || r.viewport.width > 10000 || r.viewport.height > 10000) fail('Invalid viewport.');
   if (!Array.isArray(r.steps) || r.steps.length > MAX_STEPS) fail('Recording has too many steps.');
+  if(r.minimumMs!==undefined && (!Number.isInteger(r.minimumMs)||r.minimumMs<MINIMUM_MISSION_MS||r.minimumMs>3600000))fail('Minimum mission time must be between 3 and 60 minutes.');
   let last = -1;
   for (const s of r.steps) {
     if (!s || !['pointerdown','pointerup','pointermove','wheel','keydown','keyup','text','checkpoint'].includes(s.type)) fail('Unsupported action.');
@@ -35,6 +37,7 @@ export function validateRecording(r) {
       if ((s.modifiers ?? 0) & 6) fail('System shortcuts are not supported.');
     }
     if (s.checkpoint && (typeof s.checkpoint.title !== 'string' || typeof s.checkpoint.text !== 'string' || s.checkpoint.title.length > 500 || s.checkpoint.text.length > 4000)) fail('Invalid checkpoint.');
+    for(const flag of ['missionStart','completionGate'])if(s[flag]!==undefined&&typeof s[flag]!=='boolean')fail('Invalid timing marker.');
     if(s.clickCount!==undefined&&![1,2].includes(s.clickCount))fail('Invalid click count.');
     if(s.modifiers!==undefined&&(!Number.isInteger(s.modifiers)||s.modifiers<0||s.modifiers>15))fail('Invalid modifiers.');
     if (s.target && (typeof s.target !== 'object' || JSON.stringify(s.target).length > 6000)) fail('Invalid target.');
@@ -50,10 +53,10 @@ export function validateRecording(r) {
 export function exportRecording(recording, {name=recording.name, notes='', omitText=false}={}) {
   const steps = recording.steps.filter(s => !omitText || s.type !== 'text').map(s => {
     const out={};
-    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
     return out;
   });
-  const out={format:FORMAT,version:VERSION,name:clean(name).slice(0,120),startURL:recording.startURL,viewport:recording.viewport,notes:String(notes).slice(0,4000),steps};
+  const out={format:FORMAT,version:VERSION,name:clean(name).slice(0,120),startURL:recording.startURL,viewport:recording.viewport,notes:String(notes).slice(0,4000),minimumMs:recording.minimumMs||MINIMUM_MISSION_MS,timingReviewed:!!recording.timingReviewed,steps};
   validateRecording(out); return out;
 }
 // Match a small grayscale target, rejecting low detail and ambiguous repeated patterns.
@@ -83,4 +86,30 @@ export function matchPatch(frame, patch, {threshold=17, margin=3}={}) {
   const alternative=refined.find(c=>Math.hypot(c.x-best.x,c.y-best.y)>Math.max(pw,ph)*0.65);
   if(alternative && alternative.score-best.score<margin)return null;
   return {x:best.x+patch.offsetX,y:best.y+patch.offsetY,score:best.score};
+}
+
+// Markers live on steps, so removing a step cannot silently shift the safety boundary.
+export function timingCandidates(steps) {
+  const starts=[], finishes=[];let buttons=0;const keys=new Set();
+  steps.forEach((step,index)=>{
+    if(!buttons&&!keys.size&&['pointerdown','keydown','text','wheel'].includes(step.type))finishes.push(index);
+    if(step.type==='pointerdown'||step.type==='pointerup')buttons=step.buttons??(step.type==='pointerdown'?1:0);
+    if(step.type==='keydown')keys.add(step.code);
+    if(step.type==='keyup')keys.delete(step.code);
+    if(!buttons&&!keys.size&&step.type==='checkpoint'&&step.checkpoint?.title)starts.push(index);
+  });
+  return {starts,finishes};
+}
+export function missionTiming(recording) {
+  const starts=recording.steps.flatMap((s,i)=>s.missionStart?[i]:[]);
+  const finishes=recording.steps.flatMap((s,i)=>s.completionGate?[i]:[]);
+  if(starts.length!==1||finishes.length!==1)throw Error('Review this mission: select its first objective and the action to hold before finishing.');
+  const valid=timingCandidates(recording.steps);
+  if(!valid.starts.includes(starts[0])||!valid.finishes.includes(finishes[0])||finishes[0]<=starts[0])throw Error('Timer markers are invalid. Start at an objective after acceptance; hold before a later complete input action.');
+  if(recording.timingReviewed!==true)throw Error('Confirm the timer markers in Review before replay.');
+  return {start:starts[0],finish:finishes[0],minimumMs:Math.max(MINIMUM_MISSION_MS,recording.minimumMs||0)};
+}
+export function remainingMissionMs(started, now, minimumMs=MINIMUM_MISSION_MS) {
+  if(started===null||started===undefined)throw Error('The mission timer has not started.');
+  return Math.max(0,minimumMs-Math.max(0,now-started));
 }

@@ -1,14 +1,54 @@
 {
   "manifest_version": 3,
   "name": "SmallVerse Mission Recorder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimum_chrome_version": "118",
   "description": "Record your SmallVerse inputs, replay with mission checkpoints, and exchange reviewed recordings.",
-  "permissions": ["storage", "unlimitedStorage", "debugger", "scripting", "activeTab"],
-  "host_permissions": ["https://smallverse.app/*", "https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/*"],
-  "background": {"service_worker": "background.js", "type": "module"},
-  "action": {"default_popup": "popup.html", "default_title": "SmallVerse Recorder"},
-  "content_scripts": [{"matches": ["https://smallverse.app/space/*"], "js": ["content.js"], "run_at": "document_idle"}],
-  "commands": {"stop": {"suggested_key": {"default": "Alt+Shift+S"}, "description": "Stop recording or replay"}, "pause": {"suggested_key": {"default": "Alt+Shift+P"}, "description": "Pause or resume replay"}},
-  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'"}
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "debugger",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://smallverse.app/*",
+    "https://raw.githubusercontent.com/MonicaLittleWorlds/smallverse-recorder/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SmallVerse Recorder"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://smallverse.app/space/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "stop": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Stop recording or replay"
+    },
+    "pause": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Pause or resume replay"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }

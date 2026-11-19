@@ -44,7 +44,7 @@
   function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';}
   function makeOverlay(){
     overlay=document.createElement('div');overlay.id='sv-recorder-overlay';
-    Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#102b2b',color:'white',border:'1px solid #6ac9b0',borderRadius:'9px',padding:'8px',font:'12px system-ui',boxShadow:'0 3px 15px #0006',maxWidth:'290px'});
+    Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#f6f6f2',color:'#282b26',border:'1px solid #b6bcb0',borderRadius:'4px',padding:'8px',font:'12px system-ui',maxWidth:'290px'});
     status=document.createElement('span');overlay.append(status);
     const stop=document.createElement('button');stop.textContent='Stop';stop.style.marginLeft='10px';stop.onclick=()=>send({kind:'stop'});overlay.append(stop);
     document.documentElement.append(overlay);

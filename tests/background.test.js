@@ -1,4 +1,6 @@
-import test from 'node:test';
+import test, {mock} from 'node:test';
+let clock=0,autoClock=true;
+mock.method(performance,'now',()=>{if(autoClock)clock+=200000;return clock;});
 import assert from 'node:assert/strict';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const listeners={},local={},temporary={},commands=[];
@@ -22,7 +24,7 @@ globalThis.chrome={
 };
 await import('../extension/background.js');
 const call=(kind,args={},sender={})=>new Promise((resolve,reject)=>listeners.message({kind,...args},sender,r=>r.ok?resolve(r.value):reject(Error(r.error))));
-const recording=steps=>({format:'smallverse-mission',version:1,name:'Test only',startURL:url,viewport:{width:1440,height:757},steps});
+const recording=steps=>({format:'smallverse-mission',version:1,name:'Test only',startURL:url,viewport:{width:1440,height:757},minimumMs:180000,timingReviewed:true,steps:[{type:'checkpoint',at:0,checkpoint:cp,missionStart:true},...steps.map((step,i)=>({...step,...(i===0?{completionGate:true}:{})}))]});
 const click=[{type:'pointerdown',at:0,x:100,y:120,button:'left',buttons:1,target:{tag:'button',text:'Search'}},{type:'pointerup',at:1,x:100,y:120,button:'left',buttons:0}];
 async function waitFor(predicate){for(let i=0;i<100;i++){const v=await call('status');if(predicate(v))return v;await delay(20);}throw Error('Timed out');}
 test('record, durable save, replay inputs, pause on missing targets, and stop cancellation',async()=>{
@@ -46,4 +48,26 @@ test('wrong space is rejected before attaching; shared downloads have fixed path
   const imported=await call('import',{recording:recording(click)});url='https://smallverse.app/space/other';commands.length=0;
   await assert.rejects(call('play',{tabId:1,id:imported.id}),/starting space/);assert.equal(commands.length,0);
   await assert.rejects(call('sharedImport',{path:'https://evil.example/a.json'}),/Invalid recording path/);
+});
+
+test('three-minute hold blocks finishing inputs, supports pause and cannot be bypassed by coordinate fallback',async()=>{
+  url='https://smallverse.app/space/easterisland';autoClock=false;clock=0;targetFound=true;
+  const imported=await call('import',{recording:recording(click)});
+  commands.length=0;await call('play',{tabId:1,id:imported.id});
+  await waitFor(v=>v.status.remainingMs===180000);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  clock=179999;await delay(130);assert(!commands.some(c=>c.method.startsWith('Input.')));
+  await call('pause');await call('coordinates');await delay(130);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  clock=180000;await waitFor(v=>v.status.mode==='idle');
+  assert(commands.some(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed'));
+  clock=0;commands.length=0;await call('play',{tabId:1,id:imported.id});
+  await waitFor(v=>v.status.remainingMs===180000);await call('stop');commands.length=0;clock=300000;await delay(150);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  autoClock=true;
+});
+test('unreviewed legacy recordings cannot replay without timing setup',async()=>{
+  const r=recording(click);delete r.timingReviewed;
+  const imported=await call('import',{recording:r});
+  await assert.rejects(call('play',{tabId:1,id:imported.id}),/Confirm the timer/);
 });
