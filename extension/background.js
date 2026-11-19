@@ -2,7 +2,7 @@ import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,sameWheelGesture} from './core.js';
 let lastCaptureAt=0;
 let captureQueue=Promise.resolve();
 const ROOT=RAW_ROOT;
@@ -64,9 +64,11 @@ async function capture(tabId,viewport){
   for(let i=0;i<gray.length;i++)gray[i]=Math.round(rgba[i*4]*.299+rgba[i*4+1]*.587+rgba[i*4+2]*.114);
   return {width:w,height:h,data:gray,at:capturedAt,scaleX:viewport.width/w,scaleY:viewport.height/h};
 }
-function patchAt(f,x,y){
-  const w=32,h=32,cx=x/f.scaleX,cy=y/f.scaleY,left=Math.max(0,Math.min(f.width-w,Math.round(cx-w/2))),top=Math.max(0,Math.min(f.height-h,Math.round(cy-h/2)));
+function patchAt(f,x,y,size=32){
+  const w=Math.min(size,f.width),h=Math.min(size,f.height),cx=x/f.scaleX,cy=y/f.scaleY,left=Math.max(0,Math.min(f.width-w,Math.round(cx-w/2))),top=Math.max(0,Math.min(f.height-h,Math.round(cy-h/2)));
   const data=[];for(let j=0;j<h;j++)for(let i=0;i<w;i++)data.push(f.data[(top+j)*f.width+left+i]);
+  const mean=data.reduce((a,b)=>a+b,0)/data.length;
+  if(size===32&&data.reduce((a,b)=>a+(b-mean)**2,0)/data.length<70)return patchAt(f,x,y,64);
   return {width:w,height:h,offsetX:cx-left,offsetY:cy-top,data};
 }
 function startFrames(s){
@@ -167,6 +169,11 @@ async function waitCheckpoint(s,expected,timeout=15000){
 async function point(s,step){
   if(s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
   if(s.positionReplay){
+    if(step.target){
+      const result=await page(s.tabId,{kind:'verifyPoint',target:step.target,x:step.x,y:step.y});alive(s);
+      if(result?.matches)return {x:step.x,y:step.y};
+      throw Error('The recorded control is missing, covered, or moved from its saved position. Restore the view, then Retry.');
+    }
     if(!step.patch)throw Error('Alignment cannot be verified: this action has no visual reference. Re-record this mission with visual capture working.');
     const f=await capture(s.tabId,s.recording.viewport);alive(s);
     if(!recordedPointMatches(f,step.patch,step.x,step.y))throw Error('View no longer matches the recorded click. Replay paused before clicking. Restore camera/zoom and retry.');
@@ -203,7 +210,7 @@ async function execute(s,step){
   }
 
   if(step.type==='checkpoint'){await waitCheckpoint(s,step.checkpoint,30000);return;}
-  if(['pointerdown','text','keydown'].includes(step.type))await waitCheckpoint(s,step.checkpoint);
+  if(['pointerdown','text','keydown','wheel'].includes(step.type))await waitCheckpoint(s,step.checkpoint);
   await gate(s);
   if(step.type==='pointerdown'){
     const p=await point(s,step);alive(s);s.delta={x:p.x-step.x,y:p.y-step.y};s.lastPoint=p;s.lastButton=step.button;s.gestureStart=s.index;
@@ -215,8 +222,10 @@ async function execute(s,step){
     s.lastPoint={x,y};
     await safeInput(s,'Input.dispatchMouseEvent',{type:step.type==='pointerup'?'mouseReleased':'mouseMoved',x,y,button:step.type==='pointerup'?step.button:(s.buttons?s.lastButton:'none'),buttons:step.buttons,modifiers:step.modifiers||0,...(step.type==='pointerup'?{clickCount:step.clickCount||1}:{})});s.buttons=step.buttons;
   }else if(step.type==='wheel'){
-    await point(s,step);
-    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',x:step.x,y:step.y,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});
+    // Validate the start of a continuous wheel gesture, not intermediate camera frames.
+    // Every following click and each new wheel gesture still checks alignment.
+    if(s.wheelIndex!==s.index-1||!sameWheelGesture(s.recording.steps[s.index-1],step))await point(s,step);
+    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',x:step.x,y:step.y,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});s.wheelIndex=s.index;
   }else if(step.type==='text'){
     const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p?.editable)throw Error('The recorded text field is not available.');
     const selected=await page(s.tabId,{kind:'selectText',target:step.target});if(!selected?.ok)throw Error('Could not focus the recorded text field.');
@@ -258,7 +267,7 @@ async function run(s){
       await notify();
     }catch(e){
       if(session!==s||s.cancelled)return;
-      const partial=s.buttons||s.heldKeys.size;await release(s);
+      const partial=s.buttons||s.heldKeys.size;s.wheelIndex=null;await release(s);
       s.mode='paused';s.message=e.message+(partial?' An input was interrupted; restart replay from a safe starting state.':'');s.restartRequired=!!partial;await notify();
       while(session===s&&s.mode==='paused')await sleep(100);
     }
@@ -280,7 +289,7 @@ async function pause(){
   if(!session||session.mode==='recording')throw Error('Pause is available during replay. Stop saves a recording.');
   if(session.mode==='paused'){
     if(session.restartRequired)throw Error('An input was interrupted. Stop and restart from the recorded starting state.');
-    session.mode='playing';session.message='Replaying.';
+    session.wheelIndex=null;session.mode='playing';session.message='Replaying.';
   }else if(session.buttons||session.heldKeys.size){session.pauseRequested=true;session.message='Pausing after the current input finishes. Escape stops immediately.';}
   else{session.mode='paused';session.message='Paused. Resume when ready.';}
   await notify();return snapshot();

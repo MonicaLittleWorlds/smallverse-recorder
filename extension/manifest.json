@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SmallVerse Mission Recorder",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "minimum_chrome_version": "118",
   "description": "Record your SmallVerse inputs, replay with mission checkpoints, and exchange reviewed recordings.",
   "permissions": [

@@ -4,19 +4,19 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../extension/content.js',import.meta.url),'utf8');
 function setup(){
-  const listeners={},messages=[],handlers=[],timers=new Map();let next=0;
+  const listeners={},messages=[],handlers=[],timers=new Map();let next=0,hit=null;
   class Element{
     constructor(tag='DIV',sensitive=false){this.tagName=tag;this.textContent='';this.value='';this.private=sensitive;this.style={};this.children=[];}
-    closest(selector){if(selector.includes('password'))return this.private?this:null;if(selector==='#sv-recorder-overlay')return null;if(selector.includes('button,a,input'))return this.tagName==='INPUT'?this:null;return null;}
+    closest(selector){if(selector.includes('password'))return this.private?this:null;if(selector==='#sv-recorder-overlay')return null;if(selector.includes('button,a,input'))return ['INPUT','BUTTON'].includes(this.tagName)?this:null;return null;}
     matches(){return this.tagName==='INPUT';}getAttribute(attr){return attr==='placeholder'?'Type here to chat':null;}append(...nodes){this.children.push(...nodes);}querySelector(){return null;}querySelectorAll(){return [];}getClientRects(){return [1];}
   }
-  const document={documentElement:new Element(),createElement:tag=>new Element(tag.toUpperCase()),addEventListener:(type,fn)=>{listeners[type]=fn;},querySelectorAll:()=>[]};
-  const sandbox={Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
+  const document={elementFromPoint:()=>hit,documentElement:new Element(),createElement:tag=>new Element(tag.toUpperCase()),addEventListener:(type,fn)=>{listeners[type]=fn;},querySelectorAll:()=>[]};
+  const sandbox={window:{addEventListener:document.addEventListener},Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
   vm.runInNewContext(source,sandbox);
   const message=m=>{let out;handlers[0](m,{},v=>out=v);return out;};
   message({kind:'mode',mode:'recording',started:Date.now()});messages.length=0;
   const event=(type,extra={})=>listeners[type]({isTrusted:true,target:new Element('INPUT'),key:'',buttons:0,clientX:100,clientY:120,button:0,...extra});
-  return {messages,message,event,Element};
+  return {messages,message,event,Element,setHit:value=>{hit=value;}};
 }
 test('typing flushes before Enter, and passwords are excluded',()=>{
   const s=setup(),input=new s.Element('INPUT');input.value='knock knock';s.event('input',{target:input});s.event('keydown',{target:input,key:'Enter',code:'Enter',keyCode:13});
@@ -42,4 +42,30 @@ test('fast camera drags preserve every delivered move and wheel units',()=>{
   const steps=s.messages.filter(m=>m.kind==='event').map(m=>m.step);
   assert.equal(steps.filter(s=>s.type==='pointermove').length,5);
   assert.equal(steps[0].button,'middle');assert.equal(steps.at(-1).deltaY,-48);assert.equal(steps.at(-1).deltaX,32);
+});
+
+test('coalesced drag samples retain their path and pinch-wheel modifiers',()=>{
+  const s=setup(),canvas=new s.Element('CANVAS');
+  s.event('pointerdown',{target:canvas,buttons:2,button:2});
+  s.event('pointermove',{target:canvas,buttons:2,button:-1,timeStamp:100,clientX:180,clientY:150,getCoalescedEvents:()=>[
+    {clientX:120,clientY:130,timeStamp:80},{clientX:160,clientY:145,timeStamp:90},{clientX:180,clientY:150,timeStamp:100}
+  ]});
+  s.event('pointerup',{target:canvas,button:2,clientX:180,clientY:150});
+  s.event('wheel',{target:canvas,ctrlKey:true,deltaMode:0,deltaX:0,deltaY:-6});
+  const steps=s.messages.filter(m=>m.kind==='event').map(m=>m.step),moves=steps.filter(s=>s.type==='pointermove');
+  assert.deepEqual(moves.map(m=>m.x),[120,160,180]);assert(moves.every(m=>m.buttons===2));
+  assert(moves.every((m,i)=>!i||m.at>=moves[i-1].at));
+  assert.equal(steps.at(-1).modifiers,2);assert.equal(steps.at(-1).deltaY,-6);
+});
+
+test('button verification requires the exact visible enabled control under the saved point',()=>{
+  const s=setup(),button=new s.Element('BUTTON');button.textContent='*';s.setHit(button);
+  s.event('pointerdown',{target:button,buttons:1});
+  const target=s.messages.find(m=>m.kind==='event').step.target;
+  const verify=()=>s.message({kind:'verifyPoint',target,x:100,y:120}).matches;
+  assert.equal(verify(),true);
+  button.textContent='Other';assert.equal(verify(),false);button.textContent='*';
+  button.disabled=true;assert.equal(verify(),false);button.disabled=false;
+  s.setHit(new s.Element('DIV'));assert.equal(verify(),false);
+  s.setHit(null);assert.equal(verify(),false);
 });

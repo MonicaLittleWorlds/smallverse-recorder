@@ -4,6 +4,14 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Camera recording and fixed-position replay (v0.6.9)
+
+Drag recording listens at the window capture phase and includes browser-coalesced movement samples. Horizontal/vertical wheel events and pinch-wheel modifiers are retained. Continuous wheel gestures verify alignment at their start, then replay their deltas; the next gesture or click checks alignment again. Game camera buttons are recorded as ordinary controls. Browser chrome zoom shortcuts are not supported.
+
+Fixed-position replay verifies named controls directly under their saved coordinates, including covered/disabled checks. Canvas clicks still require a matching visual reference. Faint references use stricter pixel and pattern checks; completely flat canvas references remain blocked. New low-detail captures expand to a larger reference region. Existing recordings benefit from the playback fixes without changing their steps, but missing actions or flat canvas evidence cannot be reconstructed. No completed end-to-end mission replay has been verified yet.
+
+After updating, reload the extension in Chrome Extensions and refresh the game tab while recording/replay is stopped so the new capture code is active.
+
 ## Update notifications
 
 Starting with v0.6.8, the recorder and Mission library show **Update available** with a **Download update** link when a newer stable GitHub release is published. Checks run on opening the controls, at Chrome startup, and periodically, with a six-hour cache. Offline checks preserve the last known update and retry after an hour. Download the ZIP, extract and replace your local extension files, then reload in `chrome://extensions` when recording/replay is stopped. Updates are never installed automatically. Older versions need this update installed once before they can display future notices.

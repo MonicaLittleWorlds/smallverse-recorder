@@ -69,3 +69,16 @@ test('recorded position guard rejects shifted, blank and missing references',asy
   assert.equal(recordedPointMatches(frame,{...patch,data:Array(16).fill(10)},8,8),false);
   assert.equal(recordedPointMatches(frame,null,8,8),false);
 });
+
+test('fixed-position matching accepts faint detail but rejects flat or shifted patterns',async()=>{
+  const {recordedPointMatches,sameWheelGesture}=await import('../extension/core.js');
+  const data=Array.from({length:1024},(_,i)=>80+((i*17+Math.floor(i/32)*3)%11));
+  const p={width:32,height:32,offsetX:16,offsetY:16,data};
+  const f={width:32,height:32,scaleX:1,scaleY:1,data};
+  assert(recordedPointMatches(f,p,16,16));
+  assert(!recordedPointMatches({...f,data:data.map((_,i)=>data[(i+2)%1024])},p,16,16));
+  assert(!recordedPointMatches({...f,data:Array(1024).fill(85)},p,16,16));
+  const a={type:'wheel',at:100,x:50,y:50,modifiers:2};
+  assert(sameWheelGesture(a,{...a,at:140}));
+  for(const change of [{at:500},{x:80},{modifiers:0},{type:'pointerdown'}])assert(!sameWheelGesture(a,{...a,...change}));
+});

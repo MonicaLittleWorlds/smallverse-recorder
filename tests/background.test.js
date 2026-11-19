@@ -16,6 +16,7 @@ globalThis.chrome={
   scripting:{executeScript:async()=>{}},
   tabs:{get:async id=>({id,url,active:true,windowId:1}),captureVisibleTab:async()=>{commands.push({method:'captureVisibleTab'});throw Error('Screenshots mocked unavailable');},onUpdated:event('updated'),onRemoved:event('removed'),sendMessage:async(_id,m)=>{
     if(m.kind==='probe')return {url,viewport:{width:1440,height:757},checkpoint:cp};
+    if(m.kind==='verifyPoint')return {matches:targetFound&&m.target?.text==='Search'};
     if(m.kind==='resolve')return targetFound?{x:150,y:160,editable:true}:null;
     return {ok:true};
   }},
@@ -188,7 +189,7 @@ test('position replay refuses unverified canvas and button clicks without sendin
     const imported=await call('import',{recording:recording(click.map(s=>({...s,...(s.type==='pointerdown'?{target}:{})})))});
     commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
     const paused=await waitFor(v=>v.status.mode==='paused');
-    assert.match(paused.status.message,/no visual reference/);
+    assert.match(paused.status.message,target?/missing, covered, or moved/:/no visual reference/);
     assert(!commands.some(c=>c.method.startsWith('Input.')));
     await call('stop');
   }
@@ -202,4 +203,25 @@ test('drag replay preserves middle button and final movement before release',asy
   const drag=events.filter(e=>e.type==='mouseMoved'&&e.buttons===4);
   assert.equal(drag.length,2);assert(drag.every(e=>e.button==='middle'));
   assert.equal(drag.at(-1).x,195);assert.equal(events.at(-1).x,195);
+});
+
+test('position replay verifies a control at the original point without needing a visual patch',async()=>{
+  targetFound=true;commands.length=0;
+  const imported=await call('import',{recording:recording(click)});
+  await call('play',{tabId:1,id:imported.id,positionReplay:true});await waitFor(v=>v.status.mode==='idle');
+  const press=commands.find(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed');
+  assert.equal(press.params.x,100);assert.equal(press.params.y,120);
+  targetFound=false;commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
+  await waitFor(v=>v.status.mode==='paused');assert(!commands.some(c=>c.method.startsWith('Input.')));
+  await call('stop');targetFound=true;
+});
+
+test('continuous wheel replay checks the start and rechecks after a gesture gap',async()=>{
+  const wheel={type:'wheel',at:0,x:100,y:120,deltaX:0,deltaY:-10,modifiers:2,target:{tag:'button',text:'Search'}};
+  const imported=await call('import',{recording:recording([wheel,{...wheel,at:20,target:null},{...wheel,at:250,target:{tag:'button',text:'Missing button'}}])});
+  commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
+  const state=await waitFor(v=>v.status.mode==='paused');assert.equal(state.status.index,3);
+  const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mouseWheel');
+  assert.equal(events.length,2);assert(events.every(c=>c.params.modifiers===2&&c.params.deltaY===-10));
+  await call('stop');
 });

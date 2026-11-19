@@ -42,7 +42,7 @@
   }
   const mods=e=>(e.altKey?1:0)|(e.ctrlKey?2:0)|(e.metaKey?4:0)|(e.shiftKey?8:0);
   const send=data=>chrome.runtime.sendMessage(data).catch(()=>{});
-  function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:Math.max(0,Date.now()-started),url:location.href}});}
+  function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
   function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
   function makeOverlay(){
@@ -54,17 +54,24 @@
     markFinal=document.createElement('button');markFinal.textContent='Final task starts here';markFinal.title='Press BEFORE the first action of the final task, not after mission completion';markFinal.onclick=()=>{flushText();send({kind:'markFinalTask'});};overlay.append(markFinal);
     document.documentElement.append(overlay);
   }
-  for(const type of ['pointerdown','pointerup','pointermove'])document.addEventListener(type,e=>{
+  for(const type of ['pointerdown','pointerup','pointermove'])window.addEventListener(type,e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
     if(type==='pointermove'&&!e.buttons)return; // Preserve every delivered drag sample, including fast pans.
     flushText();
     let clickCount; if(type==='pointerdown'){const now=Date.now();clickCount=lastClick&&now-lastClick.at<450&&Math.hypot(e.clientX-lastClick.x,e.clientY-lastClick.y)<5?Math.min(lastClick.count+1,2):1;lastClick={at:now,x:e.clientX,y:e.clientY,count:clickCount};}else if(type==='pointerup')clickCount=lastClick?.count||1;
+    if(type==='pointermove'){
+      const samples=e.getCoalescedEvents?.()||[];
+      if(samples.length){
+        for(const sample of samples)emit({type,x:sample.clientX,y:sample.clientY,button:'none',buttons:e.buttons,modifiers:mods(e),at:Math.max(0,Date.now()-started-Math.max(0,e.timeStamp-sample.timeStamp))});
+        if(samples.at(-1).clientX===e.clientX&&samples.at(-1).clientY===e.clientY)return;
+      }
+    }
     emit({type,clickCount,x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:target(e.target),checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
   },true);
-  document.addEventListener('wheel',e=>{
+  window.addEventListener('wheel',e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
     flushText();const unit=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
-    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unit,deltaY:e.deltaY*unit,modifiers:mods(e)});
+    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unit,deltaY:e.deltaY*unit,modifiers:mods(e),checkpoint:checkpoint()});
   },{capture:true,passive:true});
   document.addEventListener('input',e=>{
     if(mode!=='recording'||!e.isTrusted||sensitive(e.target)||own(e.target)||!editable(e.target))return;
@@ -92,6 +99,13 @@
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});
     } else if(m.kind==='flush'){flushText();reply({ok:true});}
+    else if(m.kind==='verifyPoint'){
+      const hit=document.elementFromPoint(m.x,m.y),actual=target(hit),expected=m.target;
+      const keys=['tag','role','aria','title','placeholder','text','type','dialog','dialogText','index'];
+      const hasIdentity=expected&&(expected.aria||expected.title||expected.text||expected.placeholder||expected.dialog);
+      const control=hit?.closest?.('button,a,input,textarea,select,[role="button"],[role="checkbox"],[contenteditable="true"]');
+      reply({matches:!!(hasIdentity&&actual&&control&&!control.disabled&&visible(control)&&keys.every(k=>actual[k]===expected[k]))});
+    }
     else if(m.kind==='resolve'){
       const el=resolve(m.target);
       if(!el||el.disabled){reply(null);return;}

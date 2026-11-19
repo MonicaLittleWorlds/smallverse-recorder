@@ -133,8 +133,24 @@ export function recordedPointMatches(frame,patch,x,y){
   const left=Math.round(x/frame.scaleX-patch.offsetX),top=Math.round(y/frame.scaleY-patch.offsetY);
   if(left<0||top<0||left+patch.width>frame.width||top+patch.height>frame.height)return false;
   const mean=patch.data.reduce((a,b)=>a+b,0)/patch.data.length;
-  if(patch.data.reduce((a,b)=>a+(b-mean)**2,0)/patch.data.length<70)return false;
+  const variance=patch.data.reduce((a,b)=>a+(b-mean)**2,0)/patch.data.length;
+  // Faint details can identify a fixed point, but a flat patch cannot.
+  if(variance<4)return false;
+  const observed=[];
   let error=0;
-  for(let j=0;j<patch.height;j++)for(let i=0;i<patch.width;i++)error+=Math.abs(frame.data[(top+j)*frame.width+left+i]-patch.data[j*patch.width+i]);
-  return error/patch.data.length<=12;
+  for(let j=0;j<patch.height;j++)for(let i=0;i<patch.width;i++){
+    const value=frame.data[(top+j)*frame.width+left+i];observed.push(value);
+    error+=Math.abs(value-patch.data[j*patch.width+i]);
+  }
+  if(variance>=70)return error/patch.data.length<=12;
+  const observedMean=observed.reduce((a,b)=>a+b,0)/observed.length;
+  let covariance=0,energy=0;
+  observed.forEach((v,i)=>{covariance+=(v-observedMean)*(patch.data[i]-mean);energy+=(v-observedMean)**2;});
+  const correlation=covariance/Math.sqrt(energy*variance*observed.length);
+  return error/observed.length<=3 && correlation>=0.95 && energy/observed.length>=variance*0.7 && energy/observed.length<=variance*1.3;
+}
+
+export function sameWheelGesture(previous,step){
+  return previous?.type==='wheel'&&step.type==='wheel'&&step.at>=previous.at&&step.at-previous.at<=180&&
+    (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=4;
 }
