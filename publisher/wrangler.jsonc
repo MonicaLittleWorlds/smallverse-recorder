@@ -1,0 +1,7 @@
+{
+  "name": "smallverse-mission-sharing",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-19",
+  "workers_dev": true,
+  "vars": { "PUBLIC_URL": "https://smallverse-mission-sharing.YOUR-SUBDOMAIN.workers.dev" }
+}

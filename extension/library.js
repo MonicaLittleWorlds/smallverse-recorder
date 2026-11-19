@@ -61,11 +61,14 @@ function downloadable(){if(!$('reviewed').checked)throw Error('Review the record
 function download(r,filename){const blob=new Blob([JSON.stringify(r,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=filename||((r.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'mission')+'.json');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 $('export').onclick=()=>{try{download(downloadable());$('reviewError').textContent='Exported. Nothing has been published.';}catch(e){$('reviewError').textContent=e.message;}};
 $('share').onclick=async()=>{try{
-  const prepared=await request('prepareShare',{recording:downloadable(),reviewed:$('reviewed').checked});
-  download(prepared.recording,prepared.filename);
-  await chrome.tabs.create({url:prepared.url});
-  $('reviewError').textContent='JSON downloaded. Attach it to the GitHub submission and submit. It reaches everyone after a maintainer adds it to the catalog.';
-}catch(e){$('reviewError').textContent=e.message;}};
+  $('share').disabled=true;$('reviewError').textContent='Connecting and publishing…';
+  const result=await request('publishRecording',{recording:downloadable(),reviewed:$('reviewed').checked});
+  $('reviewError').textContent=result.duplicate?'This recording is already in the shared library.':'Published to GitHub. Everyone receives it on their next sync; GitHub caching may cause a short delay.';
+  await refreshPublisher();
+}catch(e){$('reviewError').textContent=e.message;}finally{$('share').disabled=false;}};
+async function refreshPublisher(){const state=await request('publisherStatus');$('publisherStatus').textContent=!state.configured?'Automatic publishing is awaiting the owner’s hosting setup. Export JSON remains available.':state.login?`Connected as ${state.login}. Shared recordings are public.`:'Connect GitHub to publish reviewed recordings. No repository editing access is requested.';$('connectPublisher').disabled=!state.configured;$('disconnectPublisher').hidden=!state.login;}
+$('connectPublisher').onclick=async()=>{try{$('connectPublisher').disabled=true;await request('connectPublisher');await refreshPublisher();}catch(e){$('publisherStatus').textContent=e.message;}finally{$('connectPublisher').disabled=false;}};
+$('disconnectPublisher').onclick=async()=>{await request('disconnectPublisher');await refreshPublisher();};
 $('approveShared').onclick=async()=>{try{
   if(!$('reviewed').checked)throw Error('Review the inputs and check the review box first.');
   const r=edited();missionTiming(r);
@@ -81,4 +84,4 @@ async function synchronize(force){
 }
 $('loadShared').onclick=()=>synchronize(true);
 chrome.storage.onChanged.addListener((_changes,area)=>{if(area==='local')refresh().catch(()=>{});});
-await refresh();void synchronize(false);
+await refresh();await refreshPublisher();void synchronize(false);

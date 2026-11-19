@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Missions · SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header class="row between"><h1>Mission library</h1><span class="version">SmallVerse Recorder 0.4</span></header>
+<header class="row between"><h1>Mission library</h1><span class="version">SmallVerse Recorder 0.5</span></header>
 <p id="error" role="alert"></p>
 <div class="toolbar row between"><h2>Saved on this browser</h2><label class="button" style="margin:0">Import JSON<input id="import" type="file" accept=".json,application/json" hidden></label></div>
 <div id="recordings"></div>
 <section class="shared"><div class="row between"><h2>Shared missions</h2><button id="loadShared">Sync now</button></div><div id="shared"></div><p id="syncStatus" class="muted" aria-live="polite"></p><p class="muted">New and updated versions need review before replay. Personal copies are not changed by sync.</p></section>
-<details><summary>Sharing and playback setup</summary><p>Review a recording and choose Share to GitHub. Attach the downloaded JSON to the prefilled submission. Once a maintainer adds it to the catalog, everyone receives it automatically.</p><p><a href="https://github.com/MonicaLittleWorlds/smallverse-recorder/blob/main/recordings/README.md" target="_blank" rel="noreferrer">Publishing instructions</a> · <a href="https://github.com/MonicaLittleWorlds/smallverse-recorder" target="_blank" rel="noreferrer">Repository</a></p><p>The game view is standardized to 1440 × 757. Match the recording’s zoom, camera direction, starting position and prerequisites.</p></details>
+<details><summary>Sharing and playback setup</summary><p>Connect GitHub, then review a recording and choose Share to GitHub. The service uploads the JSON and adds it to the shared catalog together. Everyone receives it on their next sync.</p><p><a href="https://github.com/MonicaLittleWorlds/smallverse-recorder/blob/main/recordings/README.md" target="_blank" rel="noreferrer">Publishing instructions</a> · <a href="https://github.com/MonicaLittleWorlds/smallverse-recorder" target="_blank" rel="noreferrer">Repository</a></p><p>The game view is standardized to 1440 × 757. Match the recording’s zoom, camera direction, starting position and prerequisites.</p></details>
+<section><h2>GitHub publishing</h2><p id="publisherStatus" class="muted"></p><div class="row"><button id="connectPublisher">Connect GitHub</button><button id="disconnectPublisher" hidden>Disconnect</button></div></section>
 <footer>Recordings may include game chat and visual targets. Review before sharing.</footer>
 <dialog id="review"><div class="row between"><h2>Review recording</h2><button id="close">Close</button></div>
 <p id="sharedNotice" class="muted" hidden>Shared original. Save creates a personal copy; sync keeps the original up to date.</p><label for="missionName">Mission name</label><input id="missionName" maxlength="120">

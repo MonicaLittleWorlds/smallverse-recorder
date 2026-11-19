@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+const url=new URL(process.argv[2]||'');
+if(url.protocol!=='https:'||url.pathname!=='/'||url.search||url.hash||url.username||url.password)throw Error('Supply only the HTTPS service origin.');
+const config=new URL('../extension/publisher-config.js',import.meta.url),manifest=new URL('../extension/manifest.json',import.meta.url);
+const old=await readFile(config,'utf8'),match=old.match(/PUBLISHER_URL='([^']*)'/),value=JSON.parse(await readFile(manifest,'utf8'));
+if(match?.[1])value.host_permissions=value.host_permissions.filter(p=>p!==match[1]+'/*');
+value.host_permissions=[...new Set([...value.host_permissions,url.origin+'/*'])];
+await writeFile(config,`// Public publishing endpoint only. Never put credentials in the extension.\nexport const PUBLISHER_URL='${url.origin}';\n`);
+await writeFile(manifest,JSON.stringify(value,null,2)+'\n');
+console.log('Publishing endpoint configured. Reload the extension after deployment.');

@@ -1,3 +1,4 @@
+import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
 import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS} from './core.js';
@@ -243,6 +244,14 @@ async function handle(m,sender){
   if(m.kind==='contentReady')return {ok:true};
   if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
   if(m.kind==='sync')return synchronize(!!m.force);
+  if(m.kind==='publisherStatus')return publisherStatus();
+  if(m.kind==='connectPublisher')return connectPublisher();
+  if(m.kind==='disconnectPublisher'){await chrome.storage.session.remove('publisherSession');return {ok:true};}
+  if(m.kind==='publishRecording'){
+    if(session)throw Error('Stop recording or replay before publishing.');
+    const result=await publishRecording(m.recording,m.reviewed);
+    void synchronize(true).catch(()=>{});return result;
+  }
   if(m.kind==='prepareShare')return prepareShare(m.recording,m.reviewed);
   if(m.kind==='approveShared'){
     const all=(await chrome.storage.local.get('sharedRecordings')).sharedRecordings||{},r=all[m.id];

@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.4 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.5 preview; automatic publishing requires owner hosting setup.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -76,9 +76,10 @@ The catalog is initially empty: the earlier observed playthrough was not a recor
 ## Share to GitHub
 
 1. Open a recording's **Review / Share** screen, review the text/visual targets, and confirm its timer markers. Add starting instructions and required items. Check the public-sharing review box.
-2. Choose **Share to GitHub**. The extension downloads the reviewed JSON and opens a prefilled issue in this repository.
-3. Sign in to GitHub if needed, **attach the downloaded JSON**, and submit the issue. These are explicit steps on GitHub; the button does not silently publish the recording or store a GitHub write token.
-4. A maintainer reviews the submission and adds the recording to the catalog. Once that change is merged to `main`, everyone's extension receives it at the next sync.
+2. Connect GitHub, then choose **Share to GitHub**. The configured publishing service uploads the reviewed JSON and updates the shared catalog in one commit.
+3. Other installations receive it on their next sync and must review it before replay. Exact retry uploads do not create duplicate entries.
+
+**Owner hosting setup is still required for this preview.** The endpoint is currently blank. See `publisher/README.md`; until configured, Export JSON remains available.
 
 **Export JSON** and file import remain available. Public exports exclude local IDs and shared-download metadata but include mission inputs, typed text, small visual targets, space URLs, and timer markers. Review them before publishing. Public Git history and attachments may persist after deletion.
 
@@ -96,12 +97,14 @@ A normal download is not an administrator version. Repository permissions determ
 - Hover-only motions are not recorded. Drag movements are sampled about every 65 ms. Rapid interactions or games requiring exact hardware timing need validation.
 - Objective extraction relies on visible dialog headings and paragraphs. Unsupported/missing objective markup cannot supply a reliable checkpoint.
 - Removing steps can break a recording: review adjacent key releases, Enter presses, and pointer releases. There is no automatic repair of arbitrary edits.
-- Personal recordings are not uploaded automatically. Share to GitHub prepares a download and submission; contributors attach and submit it, then maintainers publish it to the catalog.
+- Personal recordings are uploaded only when you explicitly choose Share to GitHub after review. A configured service publishes them to the public catalog; the publishing credential remains on the service.
 
 ## Permissions and local data
 
 | Permission | Purpose |
 |---|---|
+| `identity` | User-initiated GitHub sign-in through the configured publishing service. |
+| Publishing service host access | Upload explicitly reviewed mission JSON to the owner-configured HTTPS service. |
 | `debugger` | Trusted mouse/keyboard replay, screenshots, and standard game viewport. Chrome gives this permission broad capabilities; this extension's code only attaches to validated SmallVerse space URLs. |
 | `alarms` | Periodic public catalog checks while Chrome runs. |
 | `storage`, `unlimitedStorage` | Save mission recordings, including small visual templates, locally. |
@@ -127,3 +130,10 @@ No npm dependencies are required. Twenty-six tests exercise sync/version review,
 - `extension/library.*`: review, export/import and public catalog.
 
 License: [MIT](LICENSE). Contributions and demonstrated mission recordings are welcome. Do not submit account data, access tokens, private conversations, or recordings you do not have permission to share.
+
+
+## One-click community publishing (v0.5)
+
+The Share button now uses a GitHub sign-in service to upload the reviewed JSON and update the catalog in one commit. Every signed-in contributor can publish without repository editing access. Duplicate retries reuse the existing contribution; concurrent catalog changes are preserved. Downloaded missions still require local review before replay.
+
+**Not live yet:** the service endpoint is intentionally blank until the owner deploys and configures the service. Connect/Share shows this clearly; Export JSON remains available. Follow `publisher/README.md` for Cloudflare Workers Free setup and GitHub OAuth registration. The owner creates the hosting account once; other users only sign in with GitHub. Never put a publishing token in the extension. Automatic sharing is limited to 1 MB and five new recordings per account per UTC day. Updated recording contents are published as separate contributions.

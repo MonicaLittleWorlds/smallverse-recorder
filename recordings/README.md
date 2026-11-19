@@ -5,11 +5,11 @@ Recordings published in this catalog sync automatically into everyone's SmallVer
 ## Contribute from the extension
 
 1. Open **Review / Share** and inspect typed text, visual targets, mission text and space URLs. Confirm the start/finish timer markers and include setup instructions.
-2. Check the review box and click **Share to GitHub**. This downloads the reviewed JSON and opens a prefilled GitHub issue.
-3. Sign in if needed, **attach the JSON to the issue**, and submit. Mark it tested only if you replayed that version successfully.
-4. A maintainer reviews and adds it to the catalog. It reaches other installations after that commit is merged to `main` and their next sync runs.
+2. Connect GitHub from the library (or sign in when Share prompts you).
+3. Check the review box and click **Share to GitHub**. Once the owner has configured the service, this uploads the JSON and adds it to the catalog automatically. No attachment or maintainer step is needed.
+4. Other installations receive it on their next sync and review it before replay.
 
-The button does not directly upload or publish files, bypass repository permissions, or require a GitHub token inside the extension. Anyone with a GitHub account can submit; maintainers control publication.
+**Service setup is pending in this preview.** The owner must complete `publisher/README.md` and configure its public endpoint first. Until then, Export JSON and the manual maintainer workflow below remain available. Uploading successfully does not verify gameplay. Automatic sharing supports up to 1 MB and five new recordings per account per UTC day.
 
 ## Maintainer: publish a reviewed submission
 

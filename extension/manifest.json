@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SmallVerse Mission Recorder",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "minimum_chrome_version": "118",
   "description": "Record your SmallVerse inputs, replay with mission checkpoints, and exchange reviewed recordings.",
   "permissions": [
@@ -10,7 +10,8 @@
     "debugger",
     "scripting",
     "activeTab",
-    "alarms"
+    "alarms",
+    "identity"
   ],
   "host_permissions": [
     "https://smallverse.app/*",
