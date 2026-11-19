@@ -161,3 +161,7 @@ Version 0.6.4 fixes Chrome rejecting non-surface screenshots. Capture uses the s
 ### Version 0.6.6 alignment checks
 
 Position replay now verifies a detailed visual reference at each saved click and wheel location before sending that action. Missing references or a changed view pause playback. Recording preserves every delivered drag sample, and playback keeps the held mouse button and final drag endpoint. Old recordings with no visual targets need re-recording for this mode. Visual checks are conservative and are not a guarantee of game-state correctness. Full mission validation remains pending.
+
+### Version 0.6.7 capture change
+
+Periodic images now use Chrome tabs.captureVisibleTab with serialized calls at least 550 ms apart. Neither recording nor replay forces device metrics or uses debugger screenshots. New recordings store the actual browser content size. Replay refuses a different size and shows the required dimensions; keep the game tab active and the window size unchanged. This replaces earlier standard-viewport behavior.

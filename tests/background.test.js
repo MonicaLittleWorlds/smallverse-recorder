@@ -14,7 +14,7 @@ globalThis.chrome={
   commands:{onCommand:event('command')},
   alarms:{create:async()=>{},onAlarm:event('alarm')},
   scripting:{executeScript:async()=>{}},
-  tabs:{get:async id=>({id,url}),onUpdated:event('updated'),onRemoved:event('removed'),sendMessage:async(_id,m)=>{
+  tabs:{get:async id=>({id,url,active:true,windowId:1}),captureVisibleTab:async()=>{commands.push({method:'captureVisibleTab'});throw Error('Screenshots mocked unavailable');},onUpdated:event('updated'),onRemoved:event('removed'),sendMessage:async(_id,m)=>{
     if(m.kind==='probe')return {url,viewport:{width:1440,height:757},checkpoint:cp};
     if(m.kind==='resolve')return targetFound?{x:150,y:160,editable:true}:null;
     return {ok:true};
@@ -30,15 +30,13 @@ const click=[{type:'pointerdown',at:0,x:100,y:120,button:'left',buttons:1,target
 async function waitFor(predicate){for(let i=0;i<100;i++){const v=await call('status');if(predicate(v))return v;await delay(20);}throw Error('Timed out');}
 test('record, durable save, replay inputs, pause on missing targets, and stop cancellation',async()=>{
   await call('start',{tabId:1,name:'My recording'});
-  const capture=commands.find(c=>c.method==='Page.captureScreenshot');
-  assert.equal(capture.params.fromSurface,true); // Chrome rejects non-surface captures.
-  assert.deepEqual(capture.params.clip,{x:0,y:0,width:1440,height:757,scale:1});
-  assert.equal(capture.params.captureBeyondViewport,false);
+  assert(commands.some(c=>c.method==='captureVisibleTab'));
+  assert(!commands.some(c=>c.method.startsWith('Emulation.')||c.method==='Page.captureScreenshot'));
   await call('event',{step:click[0]},{tab:{id:2}}); // Different tab cannot append.
   await call('event',{step:{...click[0],url,at:10}},{tab:{id:1}});
   await call('event',{step:{...click[1],url,at:20}},{tab:{id:1}});
   await call('stop');let state=await call('status');assert.equal(state.recordings[0].count,3); // initial checkpoint + two actions
-  assert(commands.some(c=>c.method==='Emulation.setDeviceMetricsOverride'&&c.params.width===1440));
+  assert(!commands.some(c=>c.method.startsWith('Emulation.')));
   const imported=await call('import',{recording:recording(click)});
   commands.length=0;await call('play',{tabId:1,id:imported.id});await waitFor(v=>v.status.mode==='idle');
   const inputs=commands.filter(c=>c.method==='Input.dispatchMouseEvent');

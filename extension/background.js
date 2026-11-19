@@ -2,7 +2,8 @@ import {connectPublisher,publisherStatus,publishRecording} from './publishing.js
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
 import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches} from './core.js';
-const STANDARD={width:1440,height:757,dpr:1};
+let lastCaptureAt=0;
+let captureQueue=Promise.resolve();
 const ROOT=RAW_ROOT;
 let syncJob=null;
 const SYNC_ALARM='shared-mission-sync';
@@ -29,21 +30,29 @@ async function attach(tabId,viewport){
   await chrome.debugger.attach({tabId},'1.3');
   try{
     await command(tabId,'Page.enable');
-    const before=await probe(tabId);
-    await command(tabId,'Emulation.setDeviceMetricsOverride',{width:viewport.width,height:viewport.height,deviceScaleFactor:1,mobile:false,scale:Math.min(1,before.viewport.width/viewport.width,before.viewport.height/viewport.height)});
-    await sleep(350);
+    await sleep(250);
     const p=await probe(tabId);
-    if(p.viewport.width!==viewport.width||p.viewport.height!==viewport.height)throw Error('Chrome could not establish the standard game view.');
+    if(viewport&&(p.viewport.width!==viewport.width||p.viewport.height!==viewport.height))throw Error(`Game view must match the recording: ${viewport.width}×${viewport.height}; current ${p.viewport.width}×${p.viewport.height}. Resize the window before replay.`);
     return p;
   }catch(e){await detach(tabId);throw e;}
 }
-async function detach(tabId){await command(tabId,'Emulation.clearDeviceMetricsOverride').catch(()=>{});await chrome.debugger.detach({tabId}).catch(()=>{});}
+async function detach(tabId){await chrome.debugger.detach({tabId}).catch(()=>{});}
 async function capture(tabId,viewport){
-  const capturedAt=Date.now();
-  // Chrome requires surface capture. Bound it to the established viewport and
-  // forbid capture beyond it rather than letting screenshots expand the view.
-  const {data}=await command(tabId,'Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:false,clip:{x:0,y:0,width:viewport.width,height:viewport.height,scale:1}});
-  const blob=await (await fetch('data:image/png;base64,'+data)).blob();
+  const take=async()=>{
+    await sleep(Math.max(0,550-(Date.now()-lastCaptureAt)));
+    const tab=await ensureGame(tabId);
+    if(!tab.active)throw Error('Keep the recording game tab visible for visual capture.');
+    const p=await probe(tabId);
+    if(p.viewport.width!==viewport.width||p.viewport.height!==viewport.height)throw Error('Game view size changed. Restore the original window size.');
+    lastCaptureAt=Date.now();
+    const data=await chrome.tabs.captureVisibleTab(tab.windowId,{format:'png'});
+    const after=await chrome.tabs.get(tabId);
+    if(!after.active||after.url!==tab.url)throw Error('Game tab changed during capture.');
+    return {data,at:lastCaptureAt};
+  };
+  const pending=captureQueue.then(take,take);captureQueue=pending.catch(()=>{});
+  const {data,at:capturedAt}=await pending;
+  const blob=await (await fetch(data)).blob();
   const bitmap=await createImageBitmap(blob);
   // Matching uses half-resolution pixels; all replay coordinates remain CSS pixels.
   const w=Math.round(viewport.width/2),h=Math.round(viewport.height/2),canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d',{willReadFrequently:true});
@@ -60,15 +69,15 @@ function patchAt(f,x,y){
   return {width:w,height:h,offsetX:cx-left,offsetY:cy-top,data};
 }
 function startFrames(s){
-  frameTimer=setInterval(async()=>{if(captureBusy||session!==s||s.mode!=='recording')return;captureBusy=true;try{frame=await capture(s.tabId,s.recording.viewport);}catch(e){frame=null;s.visualDisconnected=true;s.message='Inputs are saving, but visual capture failed: '+e.message;await notify();}finally{captureBusy=false;}},650);
+  frameTimer=setInterval(async()=>{if(captureBusy||session!==s||s.mode!=='recording')return;captureBusy=true;try{frame=await capture(s.tabId,s.recording.viewport);if(s.visualDisconnected){s.visualDisconnected=false;s.message='Recording inputs and visual targets.';await notify();}}catch(e){frame=null;s.visualDisconnected=true;s.message='Inputs are saving, but visual capture failed: '+e.message;await notify();}finally{captureBusy=false;}},650);
 }
 async function startRecord(tabId,name){
   if(session)throw Error('Stop the current session first.');
-  const tab=await ensureGame(tabId),p=await attach(tabId,STANDARD);
-  const r={format:FORMAT,version:VERSION,id:crypto.randomUUID(),name:String(name||'New mission').trim().slice(0,120)||'New mission',created:new Date().toISOString(),startURL:tab.url,viewport:STANDARD,notes:'',minimumMs:MINIMUM_MISSION_MS,timingReviewed:false,steps:[]};
+  const tab=await ensureGame(tabId),p=await attach(tabId,null);
+  const r={format:FORMAT,version:VERSION,id:crypto.randomUUID(),name:String(name||'New mission').trim().slice(0,120)||'New mission',created:new Date().toISOString(),startURL:tab.url,viewport:p.viewport,notes:'',minimumMs:MINIMUM_MISSION_MS,timingReviewed:false,steps:[]};
   session={tabId,mode:'recording',started:Date.now(),recording:r,message:'Recording inputs and objective changes.',index:0,heldKeys:new Map(),buttons:0};
   if(p.checkpoint.title)r.steps.push({type:'checkpoint',at:0,checkpoint:p.checkpoint,url:tab.url});
-  try{frame=await capture(tabId,STANDARD);}catch(e){frame=null;session.visualDisconnected=true;session.message='Inputs are saving, but visual capture failed: '+e.message;}
+  try{frame=await capture(tabId,r.viewport);}catch(e){frame=null;session.visualDisconnected=true;session.message='Inputs are saving, but visual capture failed: '+e.message;}
   await put(r);await notify();startFrames(session);return snapshot();
 }
 async function resumeRecord(tabId,id){
@@ -314,7 +323,7 @@ async function handle(m,sender){
   if(m.kind==='start')return startRecord(m.tabId,m.name);
   if(m.kind==='resumeRecording')return resumeRecord(m.tabId,m.id);
   if(m.kind==='play')return play(m.tabId,m.id,m.positionReplay);
-  if(m.kind==='captureCheck'){const own=!session,tabId=session?.tabId||m.tabId,viewport=session?.recording.viewport||STANDARD;if(own)await attach(tabId,viewport);try{const f=await capture(tabId,viewport);return {message:`Visual capture working: ${f.width}×${f.height}.`};}finally{if(own)await detach(tabId);}}
+  if(m.kind==='captureCheck'){const own=!session,tabId=session?.tabId||m.tabId,viewport=session?.recording.viewport||(await attach(tabId,null)).viewport;try{let f;for(let i=0;i<3;i++)f=await capture(tabId,viewport);return {message:`Three visual captures passed at ${viewport.width}×${viewport.height}; no viewport resizing used.`};}finally{if(own)await detach(tabId);}}
   if(m.kind==='stop'){if(session?.mode==='recording'){await page(session.tabId,{kind:'flush'}).catch(()=>{});await serial;}return stop('Stopped. Saved recordings are in your library.');}
   if(m.kind==='pause')return pause();
   if(m.kind==='coordinates'){
