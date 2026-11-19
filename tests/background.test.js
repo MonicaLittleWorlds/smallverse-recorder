@@ -284,3 +284,14 @@ test('radial finishing click waits for minimum time then uses live coordinates f
     assert.equal(events.at(-1).type,'mouseReleased');assert.equal(events.at(-1).x,150);assert.equal(events.at(-1).y,160);
   }finally{await call('stop');autoClock=true;}
 });
+
+test('reviewed hidden-target repair fails closed when scene capture is unavailable',async()=>{
+ url='https://smallverse.app/space/easterisland';cp={title:'Dark room',text:'Use the door'};
+ const patch={width:8,height:8,offsetX:4,offsetY:4,data:Array.from({length:64},(_,i)=>i*3)};
+ const anchors=[{x:100,y:100,patch},{x:300,y:200,patch},{x:500,y:100,patch}];
+ const r=recording(click.map((s,i)=>i? s:{...s,target:null,checkpoint:cp,sceneAnchors:anchors}));
+ const imported=await call('import',{recording:r});commands.length=0;
+ await call('play',{tabId:1,id:imported.id,positionReplay:true});
+ await waitFor(v=>v.status.mode==='paused');assert(!commands.some(c=>c.method.startsWith('Input.')));
+ await call('stop');
+});

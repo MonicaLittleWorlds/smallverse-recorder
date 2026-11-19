@@ -4,6 +4,10 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Reviewed hidden-target repairs (v0.6.13)
+
+A repaired canvas click can carry three separated visual landmarks from a confirmed scene. Playback requires all three to match at their saved positions and the complete objective text to match before using the saved click. Black pixels alone never authorize a click; missing landmarks, camera shifts or unavailable capture pause playback. This is a targeted repair, not automatic inference of invisible objects.
+
 ## Radial menu readiness (v0.6.12)
 
 New recordings mark non-dialog `*` buttons for radial-menu replay. Playback waits up to about 12 seconds for a unique, enabled, uncovered button near the selected item, requires its position to settle, and clicks its current center. The release follows that same position. Missing, ambiguous or distant controls pause safely; objective and minimum-time checks remain active. Existing recordings require the radial marker to be added through a reviewed JSON repair. Full live mission replay remains unverified.

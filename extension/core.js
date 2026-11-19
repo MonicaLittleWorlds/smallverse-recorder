@@ -39,6 +39,16 @@ export function validateRecording(r) {
     if (s.checkpoint && (typeof s.checkpoint.title !== 'string' || typeof s.checkpoint.text !== 'string' || s.checkpoint.title.length > 500 || s.checkpoint.text.length > 4000)) fail('Invalid checkpoint.');
     for(const flag of ['missionStart','completionGate','optionalDisabled'])if(s[flag]!==undefined&&typeof s[flag]!=='boolean')fail('Invalid timing marker.');
     if(s.waitForRadial!==undefined&&(s.waitForRadial!==true||s.type!=='pointerdown'||s.target?.tag!=='button'||s.target?.dialog||![s.target?.aria,s.target?.title,s.target?.text].some(v=>v==='*')))fail('Invalid radial button wait.');
+    if(s.sceneAnchors!==undefined){
+      const a=s.sceneAnchors;
+      if(s.type!=='pointerdown'||s.target||!s.checkpoint?.title||!s.checkpoint?.text||!Array.isArray(a)||a.length!==3)fail('Invalid scene alignment repair.');
+      for(const anchor of a){
+        if(!anchor||![anchor.x,anchor.y].every(finite)||anchor.x<0||anchor.y<0||anchor.x>r.viewport.width||anchor.y>r.viewport.height||!anchor.patch)fail('Invalid scene landmark.');
+        validateRecording({...r,steps:[{type:'pointerdown',at:0,x:anchor.x,y:anchor.y,patch:anchor.patch}]});
+      }
+      for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)if(Math.hypot(a[i].x-a[j].x,a[i].y-a[j].y)<100)fail('Scene landmarks must be separated.');
+      if(Math.max(...a.map(p=>p.y))-Math.min(...a.map(p=>p.y))<50)fail('Scene landmarks need vertical coverage.');
+    }
     if(s.clickCount!==undefined&&![1,2].includes(s.clickCount))fail('Invalid click count.');
     if(s.modifiers!==undefined&&(!Number.isInteger(s.modifiers)||s.modifiers<0||s.modifiers>15))fail('Invalid modifiers.');
     if (s.target && (typeof s.target !== 'object' || JSON.stringify(s.target).length > 6000)) fail('Invalid target.');
@@ -66,7 +76,7 @@ export function validateRecording(r) {
 export function exportRecording(recording, {name=recording.name, notes='', omitText=false}={}) {
   const steps = recording.steps.filter(s => !omitText || s.type !== 'text').map(s => {
     const out={};
-    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial','sceneAnchors']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
     if(s.originalSteps)out.originalSteps=exportRecording({...recording,steps:s.originalSteps},{omitText}).steps;
     return out;
   });
