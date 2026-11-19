@@ -32,3 +32,14 @@ test('records canvas pointer coordinates and drag samples',()=>{
   const events=s.messages.filter(m=>m.kind==='event');assert.equal(events.length,3);assert.equal(events[0].step.target,null);assert.equal(events[1].step.x,140);assert.equal(events[2].step.buttons,0);
 });
 test('Escape requests stop without recording escape as a game action',()=>{const s=setup();s.event('keydown',{key:'Escape'});assert.equal(s.messages.at(-1).kind,'stop');});
+
+test('fast camera drags preserve every delivered move and wheel units',()=>{
+  const s=setup(),canvas=new s.Element('CANVAS');
+  s.event('pointerdown',{target:canvas,button:1,buttons:4});
+  for(let i=0;i<5;i++)s.event('pointermove',{target:canvas,button:-1,buttons:4,clientX:100+i,clientY:120+i});
+  s.event('pointerup',{target:canvas,button:1,buttons:0,clientX:110,clientY:130});
+  s.event('wheel',{target:canvas,deltaMode:1,deltaX:2,deltaY:-3});
+  const steps=s.messages.filter(m=>m.kind==='event').map(m=>m.step);
+  assert.equal(steps.filter(s=>s.type==='pointermove').length,5);
+  assert.equal(steps[0].button,'middle');assert.equal(steps.at(-1).deltaY,-48);assert.equal(steps.at(-1).deltaX,32);
+});

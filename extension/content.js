@@ -56,7 +56,7 @@
   }
   for(const type of ['pointerdown','pointerup','pointermove'])document.addEventListener(type,e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
-    if(type==='pointermove'){if(!e.buttons||Date.now()-lastMove<65)return;lastMove=Date.now();}
+    if(type==='pointermove'&&!e.buttons)return; // Preserve every delivered drag sample, including fast pans.
     flushText();
     let clickCount; if(type==='pointerdown'){const now=Date.now();clickCount=lastClick&&now-lastClick.at<450&&Math.hypot(e.clientX-lastClick.x,e.clientY-lastClick.y)<5?Math.min(lastClick.count+1,2):1;lastClick={at:now,x:e.clientX,y:e.clientY,count:clickCount};}else if(type==='pointerup')clickCount=lastClick?.count||1;
     emit({type,clickCount,x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:target(e.target),checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});

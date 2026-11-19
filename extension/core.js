@@ -126,3 +126,15 @@ export function remainingMissionMs(started, now, minimumMs=MINIMUM_MISSION_MS) {
   if(started===null||started===undefined)throw Error('The mission timer has not started.');
   return Math.max(0,minimumMs-Math.max(0,now-started));
 }
+
+// Verify the recorded point locally; never guess a new camera transform.
+export function recordedPointMatches(frame,patch,x,y){
+  if(!patch)return false;
+  const left=Math.round(x/frame.scaleX-patch.offsetX),top=Math.round(y/frame.scaleY-patch.offsetY);
+  if(left<0||top<0||left+patch.width>frame.width||top+patch.height>frame.height)return false;
+  const mean=patch.data.reduce((a,b)=>a+b,0)/patch.data.length;
+  if(patch.data.reduce((a,b)=>a+(b-mean)**2,0)/patch.data.length<70)return false;
+  let error=0;
+  for(let j=0;j<patch.height;j++)for(let i=0;i<patch.width;i++)error+=Math.abs(frame.data[(top+j)*frame.width+left+i]-patch.data[j*patch.width+i]);
+  return error/patch.data.length<=12;
+}

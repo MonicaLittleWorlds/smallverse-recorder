@@ -185,25 +185,23 @@ test('loading notifications within SmallVerse do not stop recording or discard l
   assert.equal((await call('get',{id})).steps.at(-1).value,'after loading');
 });
 
-test('position replay executes canvas clicks and drags without visual patches, preserving timer',async()=>{
-  autoClock=false;clock=0;
-  const moves=[{...click[0],target:null},{type:'pointermove',at:1,x:130,y:145,button:'none',buttons:1},{...click[1],at:2,x:130,y:145}];
-  const imported=await call('import',{recording:recording(moves)});
-  commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
-  await waitFor(v=>v.status.remainingMs===180000);assert(!commands.some(c=>c.method.startsWith('Input.')));
-  clock=180000;await waitFor(v=>v.status.mode==='idle');
-  const inputs=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
-  assert(inputs.some(p=>p.type==='mousePressed'&&p.x===100&&p.y===120));
-  assert(inputs.some(p=>p.type==='mouseMoved'&&p.x===130&&p.y===145&&p.buttons===1));
-  assert(inputs.some(p=>p.type==='mouseReleased'&&p.x===130&&p.y===145));autoClock=true;
+test('position replay refuses unverified canvas and button clicks without sending input',async()=>{
+  for(const target of [null,{tag:'button',text:'Missing button'}]){
+    const imported=await call('import',{recording:recording(click.map(s=>({...s,...(s.type==='pointerdown'?{target}:{})})))});
+    commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:true});
+    const paused=await waitFor(v=>v.status.mode==='paused');
+    assert.match(paused.status.message,/no visual reference/);
+    assert(!commands.some(c=>c.method.startsWith('Input.')));
+    await call('stop');
+  }
 });
 
-test('position replay uses saved button coordinates even when the labeled button cannot resolve',async()=>{
-  targetFound=false;commands.length=0;
-  const imported=await call('import',{recording:recording(click)});
-  await call('play',{tabId:1,id:imported.id,positionReplay:true});
-  await waitFor(v=>v.status.mode==='idle');
-  const down=commands.find(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed');
-  assert.equal(down.params.x,100);assert.equal(down.params.y,120);
-  targetFound=true;
+test('drag replay preserves middle button and final movement before release',async()=>{
+  const moves=[{...click[0],button:'middle',buttons:4},{type:'pointermove',at:1,x:130,y:140,button:'none',buttons:4},{...click[1],at:2,button:'middle',x:145,y:160}];
+  const imported=await call('import',{recording:recording(moves)});
+  commands.length=0;await call('play',{tabId:1,id:imported.id});await waitFor(v=>v.status.mode==='idle');
+  const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
+  const drag=events.filter(e=>e.type==='mouseMoved'&&e.buttons===4);
+  assert.equal(drag.length,2);assert(drag.every(e=>e.button==='middle'));
+  assert.equal(drag.at(-1).x,195);assert.equal(events.at(-1).x,195);
 });

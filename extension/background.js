@@ -1,7 +1,7 @@
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches} from './core.js';
 const STANDARD={width:1440,height:757,dpr:1};
 const ROOT=RAW_ROOT;
 let syncJob=null;
@@ -98,7 +98,7 @@ async function ingest(sender,step,preFrame){
   if(s.recording.steps.length>=MAX_STEPS){await stop('Maximum recording length reached; saved.');return;}
   if(!gameURL(step.url)){await stop('Left SmallVerse; recording saved.');return;}
   // Use only the most recent pre-action frame. Never pretend a post-click frame is a target.
-  if(step.type==='pointerdown'&&!step.target){
+  if(['pointerdown','wheel'].includes(step.type)){
     if(preFrame&&s.started+step.at-preFrame.at>=0&&s.started+step.at-preFrame.at<1400)step.patch=patchAt(preFrame,step.x,step.y);
     else step.visualUnavailable=true;
   }
@@ -155,7 +155,13 @@ async function waitCheckpoint(s,expected,timeout=15000){
   }
 }
 async function point(s,step){
-  if(s.positionReplay||s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
+  if(s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
+  if(s.positionReplay){
+    if(!step.patch)throw Error('Alignment cannot be verified: this action has no visual reference. Re-record this mission with visual capture working.');
+    const f=await capture(s.tabId,s.recording.viewport);alive(s);
+    if(!recordedPointMatches(f,step.patch,step.x,step.y))throw Error('View no longer matches the recorded click. Replay paused before clicking. Restore camera/zoom and retry.');
+    return {x:step.x,y:step.y};
+  }
   if(step.target){const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p)throw Error('The recorded control is missing or covered. Restore the view, then Retry.');return p;}
   if(!step.patch)throw Error('No visual target was captured. Use the recorded position once only if the view matches.');
   const f=await capture(s.tabId,s.recording.viewport);alive(s);
@@ -169,7 +175,7 @@ async function execute(s,step){
     s.popupStates??={};const state=s.popupStates[s.index]??={};
     const outcome=await runOptionalPopup(step,{
       probe:()=>gate(s),resolve:target=>{
-        if(s.positionReplay){const down=step.originalSteps?.find(x=>x.type==='pointerdown');if(!down||!Number.isFinite(down.x)||!Number.isFinite(down.y))throw Error('This optional popup has no saved click position. Review its recording.');return {x:down.x,y:down.y};}
+        if(s.positionReplay){const down=step.originalSteps?.find(x=>x.type==='pointerdown');if(!down||!Number.isFinite(down.x)||!Number.isFinite(down.y))throw Error('This optional popup has no saved click position. Review its recording.');return point(s,down);}
         return page(s.tabId,{kind:'resolve',target});
       },sleep,state,
       click:async p=>{
@@ -194,9 +200,12 @@ async function execute(s,step){
     await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y,buttons:0});
     await safeInput(s,'Input.dispatchMouseEvent',{type:'mousePressed',x:p.x,y:p.y,button:step.button,buttons:step.buttons,modifiers:step.modifiers||0,clickCount:step.clickCount||1});s.buttons=step.buttons;
   }else if(step.type==='pointerup'||step.type==='pointermove'){
-    const x=step.x+(s.delta?.x||0),y=step.y+(s.delta?.y||0);s.lastPoint={x,y};
-    await safeInput(s,'Input.dispatchMouseEvent',{type:step.type==='pointerup'?'mouseReleased':'mouseMoved',x,y,button:step.type==='pointerup'?step.button:'none',buttons:step.buttons,modifiers:step.modifiers||0,...(step.type==='pointerup'?{clickCount:step.clickCount||1}:{})});s.buttons=step.buttons;
+    const x=step.x+(s.delta?.x||0),y=step.y+(s.delta?.y||0);
+    if(step.type==='pointerup'&&s.buttons&&(s.lastPoint?.x!==x||s.lastPoint?.y!==y))await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:s.lastButton,buttons:s.buttons,modifiers:step.modifiers||0});
+    s.lastPoint={x,y};
+    await safeInput(s,'Input.dispatchMouseEvent',{type:step.type==='pointerup'?'mouseReleased':'mouseMoved',x,y,button:step.type==='pointerup'?step.button:(s.buttons?s.lastButton:'none'),buttons:step.buttons,modifiers:step.modifiers||0,...(step.type==='pointerup'?{clickCount:step.clickCount||1}:{})});s.buttons=step.buttons;
   }else if(step.type==='wheel'){
+    await point(s,step);
     await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',x:step.x,y:step.y,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});
   }else if(step.type==='text'){
     const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p?.editable)throw Error('The recorded text field is not available.');

@@ -59,3 +59,13 @@ test('timing setup requires reviewed ordered markers at neutral input boundaries
   r.steps.splice(0,1);assert.throws(()=>missionTiming(r),/Review this mission/);
 });
 test('imports reject minimums below three minutes',()=>{const r=recording();r.minimumMs=179999;assert.throws(()=>validateRecording(r),/3 and 60/);});
+
+test('recorded position guard rejects shifted, blank and missing references',async()=>{
+  const {recordedPointMatches}=await import('../extension/core.js');
+  const data=Array.from({length:64},(_,i)=>i*3),frame={width:8,height:8,scaleX:2,scaleY:2,data};
+  const patch={width:4,height:4,offsetX:2,offsetY:2,data:[...data.slice(18,22),...data.slice(26,30),...data.slice(34,38),...data.slice(42,46)]};
+  assert.equal(recordedPointMatches(frame,patch,8,8),true);
+  assert.equal(recordedPointMatches(frame,patch,8,12),false);
+  assert.equal(recordedPointMatches(frame,{...patch,data:Array(16).fill(10)},8,8),false);
+  assert.equal(recordedPointMatches(frame,null,8,8),false);
+});
