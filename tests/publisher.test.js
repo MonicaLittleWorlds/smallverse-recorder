@@ -7,6 +7,7 @@ const user={id:123,login:'Player'},env={PUBLIC_URL:'https://sharing.example',OAU
 function github({conflict=false}={}){
   let entries=[],trees=[],refs=[],attempt=0;
   const fetcher=async(url,options)=>{
+    assert.equal(options.redirect,'manual'); // Cloudflare rejects redirect: error before sending.
     const body=options.body?JSON.parse(options.body):null;
     assert.equal(options.headers.Authorization,'Bearer server-only');
     if(url.endsWith('/git/ref/heads/main'))return Response.json({object:{sha:'head'+attempt}});
@@ -84,4 +85,14 @@ test('daily account limit refuses a sixth distinct recording',async()=>{
   for(let i=0;i<5;i++)await publishMission({...recording(),notes:'Version '+i},true,user,env.PUBLISH_TOKEN,mock.fetcher);
   await assert.rejects(publishMission({...recording(),notes:'Sixth'},true,user,env.PUBLISH_TOKEN,mock.fetcher),/Daily limit/);
   assert.equal(mock.refs.length,5);
+});
+
+test('publishing rejects redirects without following them or continuing writes',async()=>{
+ for(const status of [301,302,303,307,308]){
+  let calls=0;
+  await assert.rejects(publishMission(recording(),true,user,env.PUBLISH_TOKEN,async(url,options)=>{
+   calls++;assert.equal(options.redirect,'manual');return new Response(null,{status,headers:{Location:'https://unexpected.example'}});
+  }),/refused an unexpected redirect/);
+  assert.equal(calls,1);
+ }
 });

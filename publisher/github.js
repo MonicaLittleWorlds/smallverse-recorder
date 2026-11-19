@@ -4,7 +4,8 @@ export async function publishMission(recording,reviewed,user,token,fetcher=fetch
   if(new TextEncoder().encode(raw).length>1000000)throw Error('Automatic sharing supports recordings up to 1 MB. Export a larger recording for manual submission.');
   const hash=await digest(raw),path=`recordings/u${user.id}-${hash}.json`,root=`https://api.github.com/repos/${REPOSITORY}`;
   const api=async(endpoint,method='GET',body)=>{
-    const response=await fetcher(root+endpoint,{method,redirect:'error',signal:AbortSignal.timeout(15000),headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','Content-Type':'application/json','User-Agent':'SmallVerse-Recorder','X-GitHub-Api-Version':'2022-11-28'},...(body?{body:JSON.stringify(body)}:{})});
+    const response=await fetcher(root+endpoint,{method,redirect:'manual',signal:AbortSignal.timeout(15000),headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','Content-Type':'application/json','User-Agent':'SmallVerse-Recorder','X-GitHub-Api-Version':'2022-11-28'},...(body?{body:JSON.stringify(body)}:{})});
+    if(response.status>=300&&response.status<400)throw Error(`GitHub publishing refused an unexpected redirect (HTTP ${response.status}).`);
     if(!response.ok){const error=new Error(`GitHub publishing failed (HTTP ${response.status}).`);error.status=response.status;throw error;}
     return response.json();
   };
