@@ -99,3 +99,25 @@ test('shared sync adds to replay library, requires per-version review and preser
   assert((await call('get',{id:shared.id})).steps.length);
   fetchMock.mock.restore();
 });
+
+
+test('skipping an absent popup advances to next objective but preserves the three-minute hold',async()=>{
+  url='https://smallverse.app/space/easterisland';autoClock=false;clock=0;targetFound=true;
+  const before={title:'Collect',text:'Find an item'},popup={title:'Task complete',text:'You found it.'},next={title:'Next task',text:'Go to the beach'};
+  cp=before;
+  const r={...recording([]),version:3,steps:[
+    {type:'checkpoint',at:0,checkpoint:before,missionStart:true},
+    {type:'optionalPopup',at:1,popup,next,previous:before,target:{tag:'button',text:'Continue',dialog:popup.title,dialogText:popup.text}},
+    {type:'checkpoint',at:5000,checkpoint:next},
+    {...click[0],at:5001,completionGate:true},
+    {...click[1],at:5002}
+  ]};
+  const imported=await call('import',{recording:r});commands.length=0;
+  await call('play',{tabId:1,id:imported.id});
+  await waitFor(v=>v.status.index===1);cp=next;
+  await waitFor(v=>v.status.remainingMs===180000);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  clock=180000;await waitFor(v=>v.status.mode==='idle');
+  assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
+  autoClock=true;
+});

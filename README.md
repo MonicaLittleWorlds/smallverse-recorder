@@ -2,7 +2,7 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.3 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.4 preview.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
 ## Install in Chrome
 
@@ -39,7 +39,15 @@ The recorder does not infer the finishing trigger from watching pixels. Correct 
 
 Missing/unreviewed/invalid markers block replay. Removing a marked step requires setup again. The hold is before a complete input action, never in the middle of a pressed mouse/key gesture. Stop cancels the hold. Coordinate fallback cannot skip the timer.
 
-New exports use recording format **2**, including the timing markers. Version 1 files can be imported, but need timer setup before replay. Older v0.1 extensions reject format 2 rather than silently ignoring its timing requirements; update the extension to share these recordings.
+New exports use recording format **3**, including optional popup transitions and timing markers. Versions 1 and 2 can still be imported; legacy recordings need reviewed timing markers before replay. Older extensions reject format 3; update before importing new shared recordings.
+
+## Optional task popups
+
+When recording stops, complete Continue/OK clicks followed by a new objective are learned as optional popup steps. Replay matches the recorded dialog title and text, dismisses it with its recorded button, and waits for the next objective. If that objective is already visible without the popup, replay skips the dismissal and its recorded waiting delay. An unfamiliar dialog pauses playback without being clicked. A missing popup alone is not evidence that the task advanced.
+
+In **Review**, use **Detect optional popups** for older recordings, **Make optional** for a reviewed dismissal, or **Make required** to restore the original steps. Review changes and confirm timing markers before saving. Acceptance, purchases, reward buttons, drags, and timing-marked steps are not automatically made optional. Canvas-only popups and dialogs without readable headings cannot be learned automatically. The popup must have been observed during a recording; this does not discover unseen mission branches.
+
+Optional steps never contain or skip the mission timer markers. The three-minute hold still applies before the marked finishing action.
 
 ## Replay
 

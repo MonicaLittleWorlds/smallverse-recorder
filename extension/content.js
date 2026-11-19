@@ -7,11 +7,14 @@
   const own=e=>e?.closest?.('#sv-recorder-overlay');
   const editable=e=>e?.matches?.('input,textarea,[contenteditable="true"]');
   const visible=e=>!!e?.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
-  function checkpoint(){
-    const dialogs=[...document.querySelectorAll('[role="dialog"],dialog')].filter(visible);
-    const dialog=dialogs.find(d=>d.querySelector('h1,h2,h3,[role="heading"]'));
-    if(!dialog)return {title:'',text:''};
+  function visibleDialogs(){return [...document.querySelectorAll('[role="dialog"],dialog')].filter(visible);}
+  function dialogCheckpoint(dialog){
     return {title:norm(dialog.querySelector('h1,h2,h3,[role="heading"]')?.textContent).slice(0,500),text:[...dialog.querySelectorAll('p')].map(p=>norm(p.textContent)).filter(Boolean).join('\n').slice(0,4000)};
+  }
+  function checkpoint(){
+    const dialogs=visibleDialogs();
+    const dialog=dialogs.find(d=>d.querySelector('h1,h2,h3,[role="heading"]'));
+    return dialog?dialogCheckpoint(dialog):{title:'',text:''};
   }
   function target(e){
     if(!(e instanceof Element)||sensitive(e)||own(e))return null;
@@ -19,7 +22,7 @@
     if(!control)return null; // Canvas and unlabeled world surfaces use visual targets.
     const d={tag:control.tagName.toLowerCase(),role:control.getAttribute('role')||'',aria:control.getAttribute('aria-label')||'',title:control.getAttribute('title')||'',placeholder:control.getAttribute('placeholder')||'',text:norm(control.textContent).slice(0,160),type:control.getAttribute('type')||''};
     const dialog=control.closest('[role="dialog"],dialog');
-    if(dialog)d.dialog=norm(dialog.querySelector('h1,h2,h3,[role="heading"]')?.textContent);
+    if(dialog){d.dialog=norm(dialog.querySelector('h1,h2,h3,[role="heading"]')?.textContent);d.dialogText=dialogCheckpoint(dialog).text;}
     if(!d.aria&&!d.title&&!d.placeholder&&!d.text){
       // Scoped structural fallback is only allowed inside a named dialog.
       if(!d.dialog)return null;
@@ -30,7 +33,7 @@
   function resolve(d){
     if(!d || !/^[a-z]+$/.test(d.tag))return null;
     let scope=document;
-    if(d.dialog){const ds=[...document.querySelectorAll('[role="dialog"],dialog')].filter(e=>visible(e)&&norm(e.querySelector('h1,h2,h3,[role="heading"]')?.textContent)===d.dialog);if(ds.length!==1)return null;scope=ds[0];}
+    if(d.dialog){const ds=[...document.querySelectorAll('[role="dialog"],dialog')].filter(e=>visible(e)&&norm(e.querySelector('h1,h2,h3,[role="heading"]')?.textContent)===d.dialog&&(d.dialogText===undefined||norm(dialogCheckpoint(e).text)===norm(d.dialogText)));if(ds.length!==1)return null;scope=ds[0];}
     let els=[...scope.querySelectorAll(d.tag)].filter(e=>visible(e)&&!own(e)&&!sensitive(e));
     for(const [key,attr] of [['role','role'],['aria','aria-label'],['title','title'],['placeholder','placeholder'],['type','type']]) if(d[key])els=els.filter(e=>e.getAttribute(attr)===d[key]);
     if(d.text)els=els.filter(e=>norm(e.textContent).slice(0,160)===d.text);
@@ -54,7 +57,7 @@
     if(type==='pointermove'){if(!e.buttons||Date.now()-lastMove<65)return;lastMove=Date.now();}
     flushText();
     let clickCount; if(type==='pointerdown'){const now=Date.now();clickCount=lastClick&&now-lastClick.at<450&&Math.hypot(e.clientX-lastClick.x,e.clientY-lastClick.y)<5?Math.min(lastClick.count+1,2):1;lastClick={at:now,x:e.clientX,y:e.clientY,count:clickCount};}else if(type==='pointerup')clickCount=lastClick?.count||1;
-    emit({type,clickCount,x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:target(e.target),checkpoint:checkpoint()}:{})});
+    emit({type,clickCount,x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:target(e.target),checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
   },true);
   document.addEventListener('wheel',e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
@@ -77,14 +80,14 @@
     if(mode!=='recording')return;
     if(observerTimer)return;observerTimer=setTimeout(()=>{
       observerTimer=null;
-      const cp=checkpoint(),key=JSON.stringify(cp);
+      const cp=checkpoint(),key=JSON.stringify({cp,dialogs:visibleDialogs().map(dialogCheckpoint)});
       if(key!==lastCheckpoint){flushText();lastCheckpoint=key;emit({type:'checkpoint',checkpoint:cp});}
     },160);
   }).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
-    if(m.kind==='probe')reply({url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint()});
+    if(m.kind==='probe')reply({url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
-      if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify(checkpoint());}
+      if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});
     } else if(m.kind==='flush'){flushText();reply({ok:true});}
     else if(m.kind==='resolve'){

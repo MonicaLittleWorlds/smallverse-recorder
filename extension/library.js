@@ -1,3 +1,4 @@
+import {learnOptionalPopups,popupCandidate} from './popups.js';
 import {exportRecording,validateRecording,timingCandidates,missionTiming} from './core.js';
 const $=id=>document.getElementById(id);
 async function request(kind,extra={}){const r=await chrome.runtime.sendMessage({kind,...extra});if(!r.ok)throw Error(r.error);return r.value;}
@@ -19,16 +20,24 @@ async function refresh(){
   $('syncStatus').textContent=sync.error?`Sync unavailable: ${sync.error} Cached missions remain available.`:sync.lastSuccess?`Last synced ${new Date(sync.lastSuccess).toLocaleString()}.${sync.errors?.length?' '+sync.errors.length+' recording(s) could not update.':''}`:'Syncs automatically when opened and every 30 minutes while Chrome runs.';
 }
 function drawSteps(){
-  $('summary').textContent=`${current.steps.length} steps · ${current.steps.filter(s=>s.type==='text').length} typed entries · ${current.steps.filter(s=>s.patch).length} visual targets`;
+  $('summary').textContent=`${current.steps.length} steps · ${current.steps.filter(s=>s.type==='text').length} typed entries · ${current.steps.filter(s=>s.patch).length} visual targets · ${current.steps.filter(s=>s.type==='optionalPopup').length} optional popups`;
   $('steps').replaceChildren();
   current.steps.forEach((s,i)=>{
     const row=node('div');row.className='step'+(s.missionStart||s.completionGate?' marker':'');
-    let details=s.type==='text'?`Text: ${s.value}`:s.type==='checkpoint'?`Checkpoint: ${s.checkpoint.title}\n${s.checkpoint.text}`:s.type.startsWith('key')?`${s.type}: ${s.key}`:`${s.type}${s.target?' · '+(s.target.aria||s.target.title||s.target.text||s.target.tag):''}${s.x!==undefined?` · (${Math.round(s.x)}, ${Math.round(s.y)})`:''}`;
+    let details=s.type==='optionalPopup'?`Optional popup: ${s.popup.title}\n${s.popup.text}\nIf absent, require: ${s.next.title} — ${s.next.text}`:s.type==='text'?`Text: ${s.value}`:s.type==='checkpoint'?`Checkpoint: ${s.checkpoint.title}\n${s.checkpoint.text}`:s.type.startsWith('key')?`${s.type}: ${s.key}`:`${s.type}${s.target?' · '+(s.target.aria||s.target.title||s.target.text||s.target.tag):''}${s.x!==undefined?` · (${Math.round(s.x)}, ${Math.round(s.y)})`:''}`;
     row.append(node('span',`${i+1}. ${(s.at/1000).toFixed(1)}s · ${details}${s.missionStart?"\nTIMER STARTS AFTER THIS OBJECTIVE":""}${s.completionGate?"\nHOLD BEFORE THIS ACTION UNTIL 3:00":""}`));
     if(s.patch){const c=node('canvas');c.width=s.patch.width;c.height=s.patch.height;c.style.width='64px';c.style.height='64px';c.title='Visual target captured near this click';const ctx=c.getContext('2d'),data=ctx.createImageData(c.width,c.height);s.patch.data.forEach((v,j)=>{data.data.set([v,v,v,255],j*4);});ctx.putImageData(data,0,0);row.append(c);}
-    row.append(button('Remove',()=>{current.steps.splice(i,1);current.timingReviewed=false;$('timingReviewed').checked=false;$('reviewed').checked=false;drawSteps();drawTiming();}));$('steps').append(row);
+    if(s.type==='optionalPopup'&&s.originalSteps)row.append(button('Make required',()=>{current.steps.splice(i,1,...s.originalSteps.map(x=>({...x,optionalDisabled:true})));stepsChanged();}));
+    else if(popupCandidate(current.steps,i,{allowUnlabelled:true}))row.append(button('Make optional',()=>{
+      const candidate=popupCandidate(current.steps,i,{allowUnlabelled:true});
+      if(!confirm('Does this button only dismiss the task popup? Do not mark mission acceptance, purchases, or finishing actions as optional.'))return;
+      current.steps.splice(candidate.start,candidate.next-candidate.start,candidate.step);stepsChanged();
+    }));
+    row.append(button('Remove',()=>{current.steps.splice(i,1);stepsChanged();}));$('steps').append(row);
   });
 }
+function stepsChanged(){current.version=3;current.timingReviewed=false;$('timingReviewed').checked=false;$('reviewed').checked=false;drawSteps();drawTiming();}
+$('detectPopups').onclick=()=>{const learned=learnOptionalPopups(current.steps);const before=current.steps.filter(s=>s.type==='optionalPopup').length;current.steps=learned;const added=learned.filter(s=>s.type==='optionalPopup').length-before;if(added)stepsChanged();$('reviewError').textContent=added?`${added} optional popup(s) detected. Review them and reconfirm timing markers.`:'No additional complete Continue/OK popup transitions found.';};
 function describe(step,index){return `${index+1}. ${step.type==='checkpoint'?step.checkpoint.title:step.type==='text'?'Type text':step.type.startsWith('key')?step.key:(step.target?.aria||step.target?.text||step.type)}`;}
 function drawTiming(){
   const valid=timingCandidates(current.steps);

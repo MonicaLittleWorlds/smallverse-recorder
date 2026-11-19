@@ -1,5 +1,5 @@
 export const FORMAT = 'smallverse-mission';
-export const VERSION = 2;
+export const VERSION = 3;
 export const MINIMUM_MISSION_MS = 180000;
 export const MAX_STEPS = 20000;
 export const clean = s => String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -14,7 +14,7 @@ export function checkpointEqual(a, b) { return clean(a?.title) === clean(b?.titl
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 export function validateRecording(r) {
   const fail = message => { throw new Error(message); };
-  if (!r || r.format !== FORMAT || ![1, VERSION].includes(r.version)) fail('Unsupported recording format.');
+  if (!r || r.format !== FORMAT || ![1, 2, VERSION].includes(r.version)) fail('Unsupported recording format.');
   if (typeof r.name !== 'string' || !r.name.trim() || r.name.length > 120) fail('Invalid mission name.');
   if (!gameURL(r.startURL)) fail('Recording must start on a SmallVerse space.');
   if (!r.viewport || !finite(r.viewport.width) || !finite(r.viewport.height) || r.viewport.width < 100 || r.viewport.height < 100 || r.viewport.width > 10000 || r.viewport.height > 10000) fail('Invalid viewport.');
@@ -22,7 +22,7 @@ export function validateRecording(r) {
   if(r.minimumMs!==undefined && (!Number.isInteger(r.minimumMs)||r.minimumMs<MINIMUM_MISSION_MS||r.minimumMs>3600000))fail('Minimum mission time must be between 3 and 60 minutes.');
   let last = -1;
   for (const s of r.steps) {
-    if (!s || !['pointerdown','pointerup','pointermove','wheel','keydown','keyup','text','checkpoint'].includes(s.type)) fail('Unsupported action.');
+    if (!s || !['pointerdown','pointerup','pointermove','wheel','keydown','keyup','text','checkpoint','optionalPopup'].includes(s.type)) fail('Unsupported action.');
     if (!finite(s.at) || s.at < last || s.at > 86400000) fail('Invalid action time.');
     last = s.at;
     if (s.url && !gameURL(s.url)) fail('Action outside SmallVerse.');
@@ -37,10 +37,22 @@ export function validateRecording(r) {
       if ((s.modifiers ?? 0) & 6) fail('System shortcuts are not supported.');
     }
     if (s.checkpoint && (typeof s.checkpoint.title !== 'string' || typeof s.checkpoint.text !== 'string' || s.checkpoint.title.length > 500 || s.checkpoint.text.length > 4000)) fail('Invalid checkpoint.');
-    for(const flag of ['missionStart','completionGate'])if(s[flag]!==undefined&&typeof s[flag]!=='boolean')fail('Invalid timing marker.');
+    for(const flag of ['missionStart','completionGate','optionalDisabled'])if(s[flag]!==undefined&&typeof s[flag]!=='boolean')fail('Invalid timing marker.');
     if(s.clickCount!==undefined&&![1,2].includes(s.clickCount))fail('Invalid click count.');
     if(s.modifiers!==undefined&&(!Number.isInteger(s.modifiers)||s.modifiers<0||s.modifiers>15))fail('Invalid modifiers.');
     if (s.target && (typeof s.target !== 'object' || JSON.stringify(s.target).length > 6000)) fail('Invalid target.');
+    if(s.type==='optionalPopup'){
+      if(s.missionStart||s.completionGate)fail('Timing markers cannot be inside an optional popup.');
+      for(const cp of [s.popup,s.next,...(s.previous?[s.previous]:[])])if(!cp||typeof cp.title!=='string'||!clean(cp.title)||cp.title.length>500||typeof cp.text!=='string'||cp.text.length>4000)fail('Invalid optional popup checkpoint.');
+      if(checkpointEqual(s.popup,s.next))fail('Optional popup must lead to a distinct objective.');
+      if(!s.target||s.target.dialog!==s.popup.title||s.target.dialogText!==s.popup.text||!['button','a'].includes(s.target.tag))fail('Optional popup needs an exact dialog-scoped target.');
+      const label=clean(s.target.aria||s.target.text||s.target.title);
+      if(!/^(continue|ok|okay)$/i.test(label)&&!(!label&&Number.isInteger(s.target.index)&&s.target.index>=0))fail('Only recorded Continue/OK or reviewed unlabeled dismiss buttons can be optional.');
+      if(s.originalSteps){
+        if(!Array.isArray(s.originalSteps)||s.originalSteps.length>100||s.originalSteps.some(x=>x.type==='optionalPopup'||x.missionStart||x.completionGate))fail('Invalid original popup steps.');
+        validateRecording({...r,steps:s.originalSteps});
+      }
+    }
     if (s.patch) {
       const p=s.patch;
       if (!Number.isInteger(p.width) || !Number.isInteger(p.height) || p.width < 8 || p.height < 8 || p.width > 64 || p.height > 64 || !Array.isArray(p.data) || p.data.length !== p.width*p.height || !p.data.every(n=>Number.isInteger(n)&&n>=0&&n<=255) || !finite(p.offsetX) || !finite(p.offsetY)) fail('Invalid visual target.');
@@ -53,7 +65,8 @@ export function validateRecording(r) {
 export function exportRecording(recording, {name=recording.name, notes='', omitText=false}={}) {
   const steps = recording.steps.filter(s => !omitText || s.type !== 'text').map(s => {
     const out={};
-    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    if(s.originalSteps)out.originalSteps=exportRecording({...recording,steps:s.originalSteps},{omitText}).steps;
     return out;
   });
   const out={format:FORMAT,version:VERSION,name:clean(name).slice(0,120),startURL:recording.startURL,viewport:recording.viewport,notes:String(notes).slice(0,4000),minimumMs:recording.minimumMs||MINIMUM_MISSION_MS,timingReviewed:!!recording.timingReviewed,steps};

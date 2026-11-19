@@ -54,7 +54,7 @@ test('timing setup requires reviewed ordered markers at neutral input boundaries
   const r=recording();r.timingReviewed=true;r.steps=[{type:'checkpoint',at:0,checkpoint:{title:'First objective',text:'After acceptance'},missionStart:true},{type:'pointerdown',at:10,x:1,y:1,buttons:1,completionGate:true},{type:'pointerup',at:11,x:1,y:1,buttons:0}];
   assert.deepEqual(missionTiming(r),{start:0,finish:1,minimumMs:180000});
   assert.deepEqual(timingCandidates(r.steps).finishes,[1]);
-  const shared=exportRecording(r);assert.equal(shared.version,2);assert.equal(shared.steps[1].completionGate,true);assert.equal(shared.minimumMs,180000);assert.equal(shared.timingReviewed,true);
+  const shared=exportRecording(r);assert.equal(shared.version,3);assert.equal(shared.steps[1].completionGate,true);assert.equal(shared.minimumMs,180000);assert.equal(shared.timingReviewed,true);
   delete r.steps[1].completionGate;r.steps[2].completionGate=true;assert.throws(()=>missionTiming(r),/invalid/);
   r.steps.splice(0,1);assert.throws(()=>missionTiming(r),/Review this mission/);
 });

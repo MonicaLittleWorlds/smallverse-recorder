@@ -1,3 +1,4 @@
+import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
 import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS} from './core.js';
 const STANDARD={width:1440,height:757,dpr:1};
@@ -97,6 +98,7 @@ async function stop(message='Stopped. Recording saved locally.'){
   // Flush events enter the serial queue; callers must not be on that queue when stopping.
   s.cancelled=true;
   await release(s);
+  if(s.mode==='recording'){s.recording.steps=learnOptionalPopups(s.recording.steps);s.recording.version=VERSION;}
   if(s.recording.steps.length&&!s.recording.source)await put(s.recording);
   await page(s.tabId,{kind:'mode',mode:'idle'}).catch(()=>{});
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
@@ -131,6 +133,25 @@ async function point(s,step){
   return {x:match.x*f.scaleX,y:match.y*f.scaleY};
 }
 async function execute(s,step){
+  if(step.type==='optionalPopup'){
+    if(s.buttons||s.heldKeys.size)throw Error('Cannot handle a popup during a held input.');
+    s.popupStates??={};const state=s.popupStates[s.index]??={};
+    const outcome=await runOptionalPopup(step,{
+      probe:()=>gate(s),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep,state,
+      click:async p=>{
+        const observed=await gate(s);alive(s);const choice=popupDecision(step,observed);
+        if(choice==='unknown')throw Error('Unfamiliar dialog. Replay paused without clicking it.');
+        if(choice!=='dismiss')return false;
+        s.lastPoint=p;s.lastButton='left';
+        await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y,buttons:0});
+        await safeInput(s,'Input.dispatchMouseEvent',{type:'mousePressed',x:p.x,y:p.y,button:'left',buttons:1,clickCount:1});s.buttons=1;
+        await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseReleased',x:p.x,y:p.y,button:'left',buttons:0,clickCount:1});s.buttons=0;
+      }
+    });
+    s.message=outcome==='skipped'?'Next objective is visible; optional popup skipped.':'Recorded popup dismissed; next objective confirmed.';
+    s.skipNextCheckpointDelay=true;return;
+  }
+
   if(step.type==='checkpoint'){await waitCheckpoint(s,step.checkpoint,30000);return;}
   if(['pointerdown','text','keydown'].includes(step.type))await waitCheckpoint(s,step.checkpoint);
   await gate(s);
@@ -171,7 +192,8 @@ async function run(s){
   while(session===s&&s.index<s.recording.steps.length){
     try{
       const step=s.recording.steps[s.index];
-      const delay=Math.max(0,step.at-(s.recording.steps[s.index-1]?.at||0));
+      const delay=s.skipNextCheckpointDelay&&step.type==='checkpoint'?0:Math.max(0,step.at-(s.recording.steps[s.index-1]?.at||0));
+      s.skipNextCheckpointDelay=false;
       // Preserve recorded timing, including long movement waits. Pauses do not consume it.
       let remaining=delay;while(remaining>0){await gate(s);const tick=Math.min(remaining,100);await sleep(tick);remaining-=tick;}
       if(s.index===s.timing.finish)await waitMinimum(s);
