@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Missions · SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header class="row between"><h1>Mission library</h1><span class="version">SmallVerse Recorder 0.6</span></header>
+<header class="row between"><h1>Mission library</h1><span class="version">SmallVerse Recorder 0.6</span></header><aside id="updateBanner" class="update-banner" hidden role="status"><strong id="updateLabel"></strong> <a id="updateDownload" target="_blank" rel="noreferrer">Download update</a><small>Replace the local files, then reload in Chrome’s Extensions page.</small></aside>
 <p id="error" role="alert"></p>
 <div class="toolbar row between"><h2>Saved on this browser</h2><label class="button" style="margin:0">Import JSON<input id="import" type="file" accept=".json,application/json" hidden></label></div>
 <label for="librarySearch">Find a mission</label><input id="librarySearch" type="search" placeholder="Search personal and shared missions" autocomplete="off"><p id="searchStatus" class="muted" aria-live="polite"></p><div id="recordings"></div>
@@ -15,4 +15,4 @@
 <section class="timer-settings"><div class="row between"><h3>Minimum completion time</h3><strong id="minimumDisplay">3:00</strong></div><div class="timer-selects"><label for="timerStart">Start timer after this objective<select id="timerStart"></select></label><label for="timerFinish">Wait before this action<select id="timerFinish"></select></label></div><p class="muted">Choose an objective after mission acceptance. Put the wait before the click, movement, or key action that can finish the mission—not the reward message.</p><label class="check"><input id="timingReviewed" type="checkbox">These markers are correct for this mission.</label></section>
 <div class="row between"><p id="summary" class="muted"></p><button id="detectPopups">Detect optional popups</button></div><p class="muted">Optional popups are dismissed only when their recorded title, text and button match. If the next objective is already visible, the dismissal is skipped.</p><div id="steps" class="steps"></div>
 <label class="check"><input type="checkbox" id="reviewed">I reviewed the text, actions and visual targets for replay or public sharing.</label><div class="row"><button id="save" class="primary">Save</button><button id="approveShared" hidden>Use shared version</button><button id="export">Export JSON</button><button id="share">Share to GitHub</button></div><p id="reviewError" role="alert"></p>
-</dialog><script type="module" src="library.js"></script></main></body></html>
+</dialog><script type="module" src="library.js"></script></main><script type="module" src="update-banner.js"></script></body></html>

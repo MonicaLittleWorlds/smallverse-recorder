@@ -4,6 +4,10 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Update notifications
+
+Starting with v0.6.8, the recorder and Mission library show **Update available** with a **Download update** link when a newer stable GitHub release is published. Checks run on opening the controls, at Chrome startup, and periodically, with a six-hour cache. Offline checks preserve the last known update and retry after an hour. Download the ZIP, extract and replace your local extension files, then reload in `chrome://extensions` when recording/replay is stopped. Updates are never installed automatically. Older versions need this update installed once before they can display future notices.
+
 ## Install in Chrome
 
 1. Download the repository ZIP using **Code → Download ZIP**, then extract it, or clone this repository.

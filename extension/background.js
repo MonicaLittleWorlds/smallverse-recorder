@@ -1,3 +1,4 @@
+import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
@@ -305,6 +306,7 @@ async function handle(m,sender){
   }
   if(m.kind==='contentReady'){if(session?.mode==='recording'&&sender.tab?.id===session.tabId)await notify();return {ok:true};}
   if(m.kind==='status'){const reviews=(await chrome.storage.local.get('sharedReviews')).sharedReviews||{};return {status:snapshot(),sync:(await chrome.storage.local.get('syncState')).syncState||{},recordings:Object.values(await library()).map(({steps,...r})=>({...r,count:steps.length,reviewRequired:!sharedReviewed(r,reviews)}))};}
+  if(m.kind==='checkUpdates')return checkForUpdates();
   if(m.kind==='sync')return synchronize(!!m.force);
   if(m.kind==='publisherStatus')return publisherStatus();
   if(m.kind==='connectPublisher')return connectPublisher();
@@ -410,7 +412,7 @@ async function synchronize(force=false){
   })().finally(()=>{syncJob=null;});
   return syncJob;
 }
-async function setupSync(){await chrome.alarms.create(SYNC_ALARM,{periodInMinutes:30});void synchronize();}
+async function setupSync(){await chrome.alarms.create(SYNC_ALARM,{periodInMinutes:30});void synchronize();void checkForUpdates();}
 chrome.runtime.onInstalled.addListener(()=>{void setupSync();});
 chrome.runtime.onStartup.addListener(()=>{void setupSync();});
-chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name===SYNC_ALARM)void synchronize();});
+chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name===SYNC_ALARM){void synchronize();void checkForUpdates();}});

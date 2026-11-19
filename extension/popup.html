@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmallVerse Recorder</title><link rel="stylesheet" href="style.css"></head>
 <body class="popup"><main>
-<header class="row between"><h1>Mission recorder</h1><span class="version">0.6</span></header>
+<header class="row between"><h1>Mission recorder</h1><span class="version">0.6</span></header><aside id="updateBanner" class="update-banner" hidden role="status"><strong id="updateLabel"></strong> <a id="updateDownload" target="_blank" rel="noreferrer">Download update</a><small>Replace the local files, then reload in Chrome’s Extensions page.</small></aside>
 <div class="status-line" aria-live="polite"><strong id="status">Loading…</strong><small id="message"></small></div>
 <section id="new"><label for="name">New recording</label><div class="input-row"><input id="name" maxlength="120" placeholder="Mission name"><button id="record" class="primary">Record</button></div></section>
 <section id="replay"><label for="saved">Saved mission</label><input id="missionSearch" type="search" placeholder="Search missions by name" aria-label="Search saved missions" autocomplete="off"><select id="saved" size="4" aria-label="Matching missions"></select><small id="searchStatus" aria-live="polite"></small><label class="check"><input type="checkbox" id="ready">Starting position, zoom and mission state match.</label><label class="check"><input type="checkbox" id="positionReplay" checked>Use recorded positions with visual alignment checks (pauses if the view differs).</label><div class="row"><button id="play" class="primary">Replay</button><button id="resumeRecording">Continue recording</button><button id="pause">Pause / Resume</button><button id="stop">Stop</button></div></section>
@@ -9,4 +9,4 @@
 <small>Replay holds before the marked finishing action. Set the timer markers in Review.</small>
 <button id="captureCheck">Check visual capture</button><button id="coordinates" hidden>Use recorded position once</button>
 <p id="error" role="alert"></p><footer class="row between"><a href="library.html" target="_blank">Mission library</a><span>Esc to stop</span></footer>
-<script type="module" src="popup.js"></script></main></body></html>
+<script type="module" src="popup.js"></script></main><script type="module" src="update-banner.js"></script></body></html>
