@@ -340,7 +340,11 @@ async function pause(tabId){
 }
 async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
-  const extensionControl=sender.url&&['popup.html','library.html'].some(path=>sender.url===chrome.runtime.getURL(path));
+  let extensionControl=false;
+  try{
+    const source=new URL(sender.url),base=new URL(chrome.runtime.getURL('popup.html'));
+    extensionControl=source.protocol===base.protocol&&source.host===base.host&&['/popup.html','/library.html'].includes(source.pathname);
+  }catch{}
   const fromPage=!!sender.tab&&!extensionControl;
   if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart'].includes(m.kind))throw Error('This command is only available in the extension controls.');
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};

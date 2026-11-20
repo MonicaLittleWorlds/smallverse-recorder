@@ -310,3 +310,8 @@ test('adaptive replay waits after Walk To before inserting chat text',async()=>{
   const at=commands.findIndex(c=>c.method==='Input.insertText');assert(at>0);assert(commands.slice(0,at).filter(c=>c.method==='motionCapture').length>=7);
  }finally{await call('stop');chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
 });
+
+test('extension controls with query or fragment remain authorized without trusting lookalike pages',async()=>{
+ for(const suffix of ['?view=shared','#review'])assert((await call('status',{}, {url:'chrome-extension://recorder/library.html'+suffix,tab:{id:9}})).recordings);
+ for(const address of ['https://recorder/library.html','chrome-extension://other/library.html','chrome-extension://recorder/unknown.html'])await assert.rejects(call('status',{}, {url:address,tab:{id:9}}),/extension controls/);
+});

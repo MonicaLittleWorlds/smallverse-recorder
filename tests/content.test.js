@@ -11,12 +11,12 @@ function setup(){
     matches(){return this.tagName==='INPUT';}getAttribute(attr){return attr==='placeholder'?'Type here to chat':null;}append(...nodes){this.children.push(...nodes);}querySelector(){return null;}querySelectorAll(){return [];}getClientRects(){return [1];}
   }
   const document={elementFromPoint:()=>hit,documentElement:new Element(),createElement:tag=>new Element(tag.toUpperCase()),addEventListener:(type,fn)=>{listeners[type]=fn;},querySelectorAll:()=>[]};
-  const sandbox={crypto:{randomUUID:()=> 'test-document'},window:{addEventListener:document.addEventListener},Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
+  const sandbox={crypto:{randomUUID:()=> 'test-document'},window:{addEventListener:document.addEventListener},Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}disconnect(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,clearInterval:()=>{},getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
   vm.runInNewContext(source,sandbox);
   const message=m=>{let out;handlers[0](m,{},v=>out=v);return out;};
   message({kind:'mode',mode:'recording',started:Date.now()});messages.length=0;
   const event=(type,extra={})=>listeners[type]({isTrusted:true,target:new Element('INPUT'),key:'',buttons:0,clientX:100,clientY:120,button:0,...extra});
-  return {messages,message,event,Element,setHeadings:value=>{document.querySelectorAll=selector=>selector==='h3'?value:[];},setHit:value=>{hit=value;}};
+  return {messages,message,event,Element,setSend:fn=>{sandbox.chrome.runtime.sendMessage=fn;},root:document.documentElement,setHeadings:value=>{document.querySelectorAll=selector=>selector==='h3'?value:[];},setHit:value=>{hit=value;}};
 }
 test('typing flushes before Enter, and passwords are excluded',()=>{
   const s=setup(),input=new s.Element('INPUT');input.value='knock knock';s.event('input',{target:input});s.event('keydown',{target:input,key:'Enter',code:'Enter',keyCode:13});
@@ -77,4 +77,13 @@ test('hover identity requires a unique visible heading and exact description, wi
  box.textContent='White Door A different door.';assert.equal(check(),false);
  box.textContent='White Door A white wooden door.';box.getBoundingClientRect=()=>({left:400,top:-100,right:600,bottom:-10});assert.equal(check(),false);
  box.getBoundingClientRect=()=>({left:400,top:200,right:600,bottom:300});const h2=new s.Element('H3'),box2=new s.Element();h2.textContent=h.textContent;h2.parentElement=box2;box2.textContent=box.textContent;box2.getBoundingClientRect=box.getBoundingClientRect;s.setHeadings([h,h2]);assert.equal(check(),false);
+});
+
+test('extension reload catches synchronous and asynchronous invalidation and stops old recording listeners',async()=>{
+ for(const asyncError of [false,true]){
+  const s=setup();let calls=0;s.setSend(()=>{calls++;if(asyncError)return Promise.reject(Error('Extension context invalidated.'));throw Error('Extension context invalidated.');});
+  assert.doesNotThrow(()=>s.event('pointerdown',{target:new s.Element('CANVAS'),buttons:1}));await new Promise(r=>setImmediate(r));
+  s.event('pointerdown',{target:new s.Element('CANVAS'),buttons:1});s.event('keydown',{key:'Escape'});assert.equal(calls,1);
+  const overlay=s.root.children.find(e=>e.id==='sv-recorder-overlay');assert.match(overlay.children[0].textContent,/Refresh this game tab/);assert.equal(overlay.hidden,false);
+ }
 });

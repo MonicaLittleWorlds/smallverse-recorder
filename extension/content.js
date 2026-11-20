@@ -55,10 +55,22 @@
     return els.length===1 ? els[0]:null;
   }
   const mods=e=>(e.altKey?1:0)|(e.ctrlKey?2:0)|(e.metaKey?4:0)|(e.shiftKey?8:0);
-  const send=data=>chrome.runtime.sendMessage(data).catch(()=>{});
+  let invalidated=false,heartbeat;
+  function disconnect(){
+    if(invalidated)return;invalidated=true;mode='idle';pendingText=null;
+    clearTimeout(textTimer);clearTimeout(observerTimer);clearInterval(heartbeat);observer.disconnect();
+    if(!overlay)makeOverlay();overlay.hidden=false;
+    status.textContent='Recorder updated or disconnected. Refresh this game tab before recording or replay.';
+    for(const button of overlay.querySelectorAll('button'))button.hidden=true;
+  }
+  async function send(data){
+    if(invalidated)return;
+    try{return await chrome.runtime.sendMessage(data);}
+    catch(error){if(/extension context invalidated/i.test(String(error?.message||error)))disconnect();}
+  }
   function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
-  function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
+  function setMode(next){if(invalidated)return;mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
   function makeOverlay(){
     overlay=document.createElement('div');overlay.id='sv-recorder-overlay';
     Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#f6f6f2',color:'#282b26',border:'1px solid #b6bcb0',borderRadius:'4px',padding:'8px',font:'12px system-ui',maxWidth:'290px'});
@@ -101,15 +113,17 @@
     if(editable(e.target)&&!['Enter','Tab','Escape'].includes(e.key))return; // input events capture final field value, including paste/IME.
     flushText();emit({type,key:e.key,code:e.code,keyCode:e.keyCode,repeat:e.repeat,modifiers:mods(e),target:target(e.target),checkpoint:type==='keydown'?checkpoint():undefined});
   },true);
-  new MutationObserver(()=>{
+  const observer=new MutationObserver(()=>{
     if(mode!=='recording')return;
     if(observerTimer)return;observerTimer=setTimeout(()=>{
       observerTimer=null;
       const cp=checkpoint(),key=JSON.stringify({cp,dialogs:visibleDialogs().map(dialogCheckpoint)});
       if(key!==lastCheckpoint){flushText();lastCheckpoint=key;emit({type:'checkpoint',checkpoint:cp});}
     },160);
-  }).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
+  });
+  observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
+    if(invalidated){reply({ok:false,error:'Refresh this game tab after updating the recorder.'});return;}
     if(m.kind==='probe')reply({motionView:motionView(),documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
@@ -155,6 +169,6 @@
     }
   });
   // Keep the worker awake during recording, playback and pauses.
-  setInterval(()=>{if(mode!=='idle')send({kind:'contentReady',documentToken});},10000);
+  heartbeat=setInterval(()=>{if(mode!=='idle')send({kind:'contentReady',documentToken});},10000);
   send({kind:'contentReady',documentToken});
 })();

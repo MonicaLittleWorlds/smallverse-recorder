@@ -4,6 +4,10 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Reload recovery (v0.7.1)
+
+A game tab whose extension context was invalidated catches both immediate and asynchronous messaging errors, stops its stale recording/heartbeat handlers and shows a refresh notice. Reloading the extension still requires refreshing existing game tabs before the next run. Library/popup URLs with query strings or fragments remain recognized as extension controls; game pages and lookalike origins remain restricted. Startup failures in the library are displayed rather than left as unhandled errors.
+
 ## Walking and camera adaptation (v0.7.0)
 
 Adaptive playback is now the default. Leave **Use exact saved positions** unchecked. Named controls are located at their current visible position and must settle across two observations. Canvas targets are searched across the current screenshot at 0.5×–2× their recorded size; ambiguous, missing or low-detail targets pause without clicking. The scaled click offset is preserved. This handles translation and uniform zoom, not rotation, unseen objects or major appearance changes. The browser viewport must still match the recording; no window resizing or viewport emulation is used.

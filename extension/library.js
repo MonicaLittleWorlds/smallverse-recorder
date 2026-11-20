@@ -111,4 +111,4 @@ async function synchronize(force){
 $('loadShared').onclick=()=>synchronize(true);
 $('librarySearch').oninput=()=>refresh().catch(e=>$('error').textContent=e.message);
 chrome.storage.onChanged.addListener((_changes,area)=>{if(area==='local')refresh().catch(()=>{});});
-await refresh();await refreshPublisher();void synchronize(false);
+try{await refresh();await refreshPublisher();void synchronize(false);}catch(e){$('error').textContent=e.message;}
