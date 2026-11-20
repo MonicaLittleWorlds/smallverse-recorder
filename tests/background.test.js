@@ -43,7 +43,7 @@ test('record, durable save, replay inputs, pause on missing targets, and stop ca
   const inputs=commands.filter(c=>c.method==='Input.dispatchMouseEvent');
   assert.equal(inputs[1].params.type,'mousePressed');assert.equal(inputs[1].params.x,150);assert.equal(inputs[2].params.x,150);assert.equal(inputs[2].params.type,'mouseReleased');
   targetFound=false;commands.length=0;await call('play',{tabId:1,id:imported.id});
-  state=await waitFor(v=>v.status.mode==='paused');assert.match(state.status.message,/missing or covered/);assert(!commands.some(c=>c.method.startsWith('Input.')));
+  state=await waitFor(v=>v.status.mode==='paused');assert.match(state.status.message,/could not be located uniquely/);assert(!commands.some(c=>c.method.startsWith('Input.')));
   await call('stop');targetFound=true;
   const long=await call('import',{recording:recording(click.map(s=>({...s,at:s.at+5000})))});
   await call('play',{tabId:1,id:long.id});await call('stop');commands.length=0;await delay(150);assert(!commands.some(c=>c.method.startsWith('Input.')));
@@ -294,4 +294,19 @@ test('reviewed hidden-target repair fails closed when scene capture is unavailab
  await call('play',{tabId:1,id:imported.id,positionReplay:true});
  await waitFor(v=>v.status.mode==='paused');assert(!commands.some(c=>c.method.startsWith('Input.')));
  await call('stop');
+});
+
+test('adaptive replay waits after Walk To before inserting chat text',async()=>{
+ const oldCapture=chrome.tabs.captureVisibleTab,oldBitmap=globalThis.createImageBitmap,oldCanvas=globalThis.OffscreenCanvas;let captures=0;
+ chrome.tabs.captureVisibleTab=async()=>{captures++;commands.push({method:'motionCapture',captures});return 'data:text/plain,test';};
+ globalThis.createImageBitmap=async()=>({width:2880,height:1514,close(){}});
+ globalThis.OffscreenCanvas=class{getContext(){return {drawImage(){},getImageData(){const data=new Uint8Array(720*379*4);for(let i=0;i<720*379;i++){const v=(i*7+(i%720)**2)%256;data.fill(v,i*4,i*4+3);}if(captures<4)for(let y=40;y<80;y++)for(let x=40+captures*4;x<80+captures*4;x++)data.fill(0,(y*720+x)*4,(y*720+x)*4+3);return {data};}};}};
+ try{
+  url='https://smallverse.app/space/easterisland';cp={title:'Walk',text:'Approach then speak'};targetFound=true;
+  const r=recording([{...click[0],target:{tag:'button',aria:'Walk To'}},click[1],{type:'text',at:2,value:'hello',target:{tag:'input'},checkpoint:cp}]);
+  const imported=await call('import',{recording:r});commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:false});
+  for(let i=0;i<150;i++){if((await call('status')).status.mode==='idle')break;await delay(50);}
+  assert.equal((await call('status')).status.mode,'idle');
+  const at=commands.findIndex(c=>c.method==='Input.insertText');assert(at>0);assert(commands.slice(0,at).filter(c=>c.method==='motionCapture').length>=7);
+ }finally{await call('stop');chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
 });

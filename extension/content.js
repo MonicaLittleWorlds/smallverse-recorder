@@ -8,6 +8,19 @@
   const own=e=>e?.closest?.('#sv-recorder-overlay');
   const editable=e=>e?.matches?.('input,textarea,[contenteditable="true"]');
   const visible=e=>!!e?.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
+  function motionView(){
+    const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+    const canvases=[...document.querySelectorAll('canvas')].filter(visible).map(rect).sort((a,b)=>b.width*b.height-a.width*a.height);
+    const region=canvases[0]||{x:0,y:innerHeight*.06,width:innerWidth,height:innerHeight*.8};
+    const exclude=[...document.querySelectorAll('[role="dialog"],dialog,[role="toolbar"],[aria-label="Game header"],#sv-recorder-overlay')].filter(visible).map(rect);
+    for(const input of document.querySelectorAll('input,textarea')){
+      if(!visible(input))continue;
+      let box=input;
+      for(let p=input.parentElement;p;p=p.parentElement){const r=rect(p);if(r.width>innerWidth*.45||r.height>innerHeight*.9)break;box=p;}
+      exclude.push(rect(box));
+    }
+    return {region,exclude};
+  }
   function visibleDialogs(){return [...document.querySelectorAll('[role="dialog"],dialog')].filter(visible);}
   function dialogCheckpoint(dialog){
     return {title:norm(dialog.querySelector('h1,h2,h3,[role="heading"]')?.textContent).slice(0,500),text:[...dialog.querySelectorAll('p')].map(p=>norm(p.textContent)).filter(Boolean).join('\n').slice(0,4000)};
@@ -97,7 +110,7 @@
     },160);
   }).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
-    if(m.kind==='probe')reply({documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
+    if(m.kind==='probe')reply({motionView:motionView(),documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});

@@ -88,7 +88,7 @@ export function exportRecording(recording, {name=recording.name, notes='', omitT
   validateRecording(out); return out;
 }
 // Match a small grayscale target, rejecting low detail and ambiguous repeated patterns.
-export function matchPatch(frame, patch, {threshold=17, margin=3}={}) {
+export function matchPatch(frame, patch, {threshold=17, margin=3,includeAlternative=false}={}) {
   const {width:w,height:h,data}=frame, pw=patch.width, ph=patch.height;
   if(w<pw || h<ph) return null;
   const avg=patch.data.reduce((a,b)=>a+b,0)/patch.data.length;
@@ -112,8 +112,8 @@ export function matchPatch(frame, patch, {threshold=17, margin=3}={}) {
   refined.sort((a,b)=>a.score-b.score);
   const best=refined[0]; if(!best || best.score>threshold)return null;
   const alternative=refined.find(c=>Math.hypot(c.x-best.x,c.y-best.y)>Math.max(pw,ph)*0.65);
-  if(alternative && alternative.score-best.score<margin)return null;
-  return {x:best.x+patch.offsetX,y:best.y+patch.offsetY,score:best.score};
+  if(!includeAlternative&&alternative && alternative.score-best.score<margin)return null;
+  return {x:best.x+patch.offsetX,y:best.y+patch.offsetY,score:best.score,...(includeAlternative&&alternative?{alternative:{x:alternative.x+patch.offsetX,y:alternative.y+patch.offsetY,score:alternative.score}}:{})};
 }
 
 // Markers live on steps, so removing a step cannot silently shift the safety boundary.

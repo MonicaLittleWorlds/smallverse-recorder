@@ -4,6 +4,16 @@ A personal, open-source Chrome extension for teaching reusable SmallVerse record
 
 **Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
 
+## Walking and camera adaptation (v0.7.0)
+
+Adaptive playback is now the default. Leave **Use exact saved positions** unchecked. Named controls are located at their current visible position and must settle across two observations. Canvas targets are searched across the current screenshot at 0.5×–2× their recorded size; ambiguous, missing or low-detail targets pause without clicking. The scaled click offset is preserved. This handles translation and uniform zoom, not rotation, unseen objects or major appearance changes. The browser viewport must still match the recording; no window resizing or viewport emulation is used.
+
+After canvas clicks, recorded Walk To actions, camera controls, drags and wheel gestures, playback waits for three quiet frame intervals before the next input, up to about 40 seconds. It measures visible world motion while excluding detected dialogs, chat and toolbars. The following target and full objective are still checked. This is a visual settling heuristic: it cannot prove path completion, distinguish a blocked avatar from an arrived one, or reliably ignore every idle animation. Persistent animation or a dark/featureless scene can pause safely. Stop/Pause remain available during waiting; settling is rechecked after recovery.
+
+Future recordings capture larger 64×64 visual references to provide more surrounding detail. Existing recordings can use adaptive mode where their references remain distinctive; no missing actions are invented. The deleted Autumn library entry is not restored automatically. Full live replay with this mode remains unverified.
+
+Publishing now serializes mission files as lossless compact JSON. Indentation no longer consumes the 1 MB upload allowance; all actions and visual pixels are retained.
+
 ## Hover identity and scene settling (v0.6.14)
 
 Reviewed hidden-object repairs can require the exact item title and description to appear after hovering the saved position. Playback first moves away and requires any old matching label to disappear, then hovers the target and requires two matching observations before clicking. Missing, stale, ambiguous or wrong labels pause without clicking. The full objective text must still match. This is a targeted recording repair, not an automatic guess at invisible objects.
