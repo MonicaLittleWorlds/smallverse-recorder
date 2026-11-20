@@ -2,7 +2,15 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.7.3 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.7.4 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+
+## In-game recovery and view guidance (v0.7.4)
+
+The game overlay now includes Pause/Resume. While paused, **Tasks** opens a searchable list of safe recorded objectives. **Resume detected task** is available only when exactly one checkpoint matches the game's full visible objective; repeated matches require choosing the correct occurrence. Resuming a task verifies the objective again and starts a fresh three-minute minimum. This moves the recorder position, not the game's progress, and can repeat actions already completed within that task. The confirmation explains this before proceeding.
+
+**Adjust view** shows the next directly checkable target's saved image with a red crosshair and its name when available. Pan or zoom the game manually, then use **Adapt & check view**. The check sends no mouse or keyboard input and does not advance playback. It locates a stable visible target and enables adaptive replay only after success. A green ring marks that target for five seconds; manual pointer/scroll input or resuming clears it. Resume rechecks before acting. **Move panel** switches the controls between sides if they cover the target.
+
+This adapts target coordinates; it does not automatically restore camera position, infer where an off-screen object is, or guarantee that every later step will match. Missing targets, changed objectives, interrupted inputs, and disconnected documents remain blocked. Hidden-object hover repairs and fixed-landmark repairs retain their special checks and are not declared aligned by this general view check. Overlay commands are restricted to the active playback game tab and cannot load another recording or bypass shared review. Keep the game visible; background playback is not enabled by this update.
 
 ## Camera gestures and local animation (v0.7.3)
 

@@ -353,3 +353,23 @@ test('trackpad wheel sequence retains horizontal, fractional, pinch and cursor m
   assert(!commands.some(c=>c.method.startsWith('Emulation.')));
  }finally{await call('stop');currentViewport={width:1440,height:757};}
 });
+
+test('in-game overlay verifies views without sending input or advancing progress and restricts its commands',async()=>{
+ const sender={url,tab:{id:1}};targetFound=false;
+ const imported=await call('import',{recording:recording(click)});
+ try{
+  await call('play',{tabId:1,id:imported.id,positionReplay:true});await waitFor(v=>v.status.mode==='paused');
+  const before=(await call('status')).status.index;commands.length=0;
+  for(const other of [{url,tab:{id:2}},{url:'https://example.com',tab:{id:1}},{}])await assert.rejects(call('overlayTasks',{},other),/active playback game tab/);
+  const tasks=await call('overlayTasks',{},sender);assert.equal(tasks.currentIndex,0);assert.equal(tasks.matches,1);
+  targetFound=true;currentViewport={width:1470,height:956};
+  const result=await call('overlayCheckView',{},sender);assert.deepEqual(result.point,{x:150,y:160,editable:true});
+  const after=(await call('status')).status;assert.equal(after.mode,'paused');assert.equal(after.index,before);
+  assert.equal(local.activePlayback.positionReplay,false);assert.deepEqual(local.activePlayback.playbackViewport,currentViewport);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  const original=cp;cp={title:'Wrong task',text:'Different'};
+  await assert.rejects(call('overlayCheckView',{},sender),/objective differs/);cp=original;
+  await assert.rejects(call('overlayResumeTask',{index:0},sender),/Confirm/);
+  await call('overlayResumeTask',{index:0,confirmed:true},sender);await waitFor(v=>v.status.mode==='idle');
+ }finally{targetFound=true;await call('stop');currentViewport={width:1440,height:757};}
+});

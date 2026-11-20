@@ -8,7 +8,7 @@ function setup(){
   class Element{
     constructor(tag='DIV',sensitive=false){this.tagName=tag;this.textContent='';this.value='';this.private=sensitive;this.style={};this.children=[];}
     closest(selector){if(selector.includes('password'))return this.private?this:null;if(selector==='#sv-recorder-overlay')return null;if(selector.includes('button,a,input'))return ['INPUT','BUTTON'].includes(this.tagName)?this:null;return null;}
-    matches(){return this.tagName==='INPUT';}getAttribute(attr){return attr==='placeholder'?'Type here to chat':null;}append(...nodes){this.children.push(...nodes);}querySelector(){return null;}querySelectorAll(){return [];}getClientRects(){return [1];}
+    matches(){return this.tagName==='INPUT';}getAttribute(attr){return attr==='placeholder'?'Type here to chat':null;}append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=[...nodes];}querySelector(){return null;}querySelectorAll(){return [];}getClientRects(){return [1];}
   }
   const document={elementFromPoint:()=>hit,documentElement:new Element(),createElement:tag=>new Element(tag.toUpperCase()),addEventListener:(type,fn)=>{listeners[type]=fn;},querySelectorAll:()=>[]};
   const sandbox={crypto:{randomUUID:()=> 'test-document'},window:{addEventListener:document.addEventListener},Element,document,innerWidth:1440,innerHeight:757,devicePixelRatio:1,location:{href:'https://smallverse.app/space/easterisland'},Date,MutationObserver:class{observe(){}disconnect(){}},setTimeout:fn=>{const id=++next;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),setInterval:()=>1,clearInterval:()=>{},getComputedStyle:()=>({visibility:'visible'}),chrome:{runtime:{sendMessage:m=>{messages.push(m);return Promise.resolve({});},onMessage:{addListener:fn=>handlers.push(fn)}}}};
@@ -96,4 +96,18 @@ test('wheel input records device-independent pixel amounts, both axes, page unit
  const events=s.messages.filter(m=>m.kind==='event').map(m=>m.step);
  assert.equal(events[0].deltaX,1.25);assert.equal(events[0].deltaY,-3.75);assert.equal(events[0].modifiers,2);
  assert.equal(events[1].deltaX,1440);assert.equal(events[1].deltaY,-757);assert.equal(events[2].target.text,'Zoom in');
+});
+
+test('overlay offers paused task search and read-only alignment with a verified screen marker',async()=>{
+ const s=setup(),all=()=>{const found=[];function visit(e){found.push(e);for(const c of e.children||[])visit(c);}visit(s.root);return found;},button=text=>all().find(e=>e.textContent===text);
+ const calls=[];s.setSend(async m=>{calls.push(m);return {ok:true,value:m.kind==='overlayTasks'?{tasks:[{index:3,checkpoint:{title:'Task 4',text:'Open door'}}],currentIndex:3,matches:1,viewport:{width:1440,height:757}}:m.kind==='overlayCheckView'?{message:'Target found',point:{x:230,y:240}}:{}};});
+ s.message({kind:'mode',mode:'playing'});assert(button('Tasks').disabled);
+ s.message({kind:'mode',mode:'paused'});assert(!button('Tasks').disabled);await button('Tasks').onclick();
+ assert(all().some(e=>e.placeholder==='Search recorded tasks'));assert(!button('Resume detected task').disabled);
+ await button('Adjust view').onclick();await button('Adapt & check view').onclick();
+ assert.equal(calls.at(-1).kind,'overlayCheckView');assert(all().some(e=>e.textContent==='Next target found'));
+ const marker=all().find(e=>e.style.left==='230px'&&e.style.top==='240px');assert(marker&&!marker.hidden);
+ s.event('wheel',{target:new s.Element('CANVAS'),deltaX:0,deltaY:5});assert(marker.hidden);
+ await button('Adapt & check view').onclick();assert(!marker.hidden);
+ s.message({kind:'mode',mode:'playing'});assert(marker.hidden);
 });

@@ -2,7 +2,7 @@
   if (globalThis.__svRecorder) return;
   globalThis.__svRecorder = true;
   const documentToken=crypto.randomUUID();
-  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart;
+  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart,playbackTools,pauseButton,taskButton,viewButton,recoveryPanel,targetMarker;
   const norm=s=>String(s??'').replace(/\s+/g,' ').trim();
   const sensitive=e=>e?.closest?.('input[type="password"],input[autocomplete*="password"],input[autocomplete^="cc-"],[data-private]');
   const own=e=>e?.closest?.('#sv-recorder-overlay');
@@ -70,7 +70,7 @@
   }
   function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
-  function setMode(next){if(invalidated)return;mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
+  function setMode(next){if(invalidated)return;if(next!==mode&&targetMarker)targetMarker.hidden=true;mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';playbackTools.hidden=!['playing','paused'].includes(mode);pauseButton.textContent=mode==='paused'?'Resume':'Pause';taskButton.disabled=viewButton.disabled=mode!=='paused';if(mode!=='paused')recoveryPanel.hidden=true;}
   function makeOverlay(){
     overlay=document.createElement('div');overlay.id='sv-recorder-overlay';
     Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#f6f6f2',color:'#282b26',border:'1px solid #b6bcb0',borderRadius:'4px',padding:'8px',font:'12px system-ui',maxWidth:'290px'});
@@ -78,9 +78,64 @@
     const stop=document.createElement('button');stop.textContent='Stop';stop.style.marginLeft='10px';stop.onclick=()=>send({kind:'stop'});overlay.append(stop);
     markStart=document.createElement('button');markStart.textContent='Mission accepted';markStart.title='Press after accepting, when the first active objective is visible';markStart.onclick=()=>{flushText();send({kind:'markMissionStart'});};overlay.append(markStart);
     markFinal=document.createElement('button');markFinal.textContent='Final task starts here';markFinal.title='Press BEFORE the first action of the final task, not after mission completion';markFinal.onclick=()=>{flushText();send({kind:'markFinalTask'});};overlay.append(markFinal);
-    document.documentElement.append(overlay);
+    makePlaybackTools();document.documentElement.append(overlay);
+  }
+  let markerTimer;
+  function showTargetMarker(point){
+    if(!targetMarker){
+      targetMarker=document.createElement('div');
+      Object.assign(targetMarker.style,{position:'fixed',width:'26px',height:'26px',border:'3px solid #22c55e',borderRadius:'50%',transform:'translate(-50%, -50%)',pointerEvents:'none',zIndex:'2147483647',boxShadow:'0 0 0 2px #17271c'});
+      const label=document.createElement('span');label.textContent='Next target found';Object.assign(label.style,{position:'absolute',top:'30px',left:'0',whiteSpace:'nowrap',background:'#17271c',color:'#fff',padding:'3px 5px',font:'12px system-ui'});targetMarker.append(label);overlay.append(targetMarker);
+    }
+    clearTimeout(markerTimer);targetMarker.style.left=point.x+'px';targetMarker.style.top=point.y+'px';targetMarker.hidden=false;
+    markerTimer=setTimeout(()=>{targetMarker.hidden=true;},5000);
+  }
+  async function overlayRequest(kind,args={}){
+    const result=await send({kind,...args});
+    if(!result?.ok)throw Error(result?.error||'Recorder unavailable. Refresh the game after updating.');
+    return result.value;
+  }
+  function makePlaybackTools(){
+    playbackTools=document.createElement('div');playbackTools.hidden=true;overlay.append(playbackTools);
+    recoveryPanel=document.createElement('div');recoveryPanel.hidden=true;
+    Object.assign(recoveryPanel.style,{marginTop:'8px',maxHeight:'340px',overflowY:'auto'});overlay.append(recoveryPanel);
+    const button=(label,action,parent=playbackTools)=>{
+      const b=document.createElement('button');b.textContent=label;b.style.margin='5px 4px 0 0';
+      b.onclick=async()=>{b.disabled=true;try{await action();}catch(e){status.textContent=e.message;}finally{b.disabled=false;}};
+      parent.append(b);return b;
+    };
+    pauseButton=button('Pause',()=>overlayRequest('overlayPause'));
+    const openPanel=async view=>{
+      if(targetMarker)targetMarker.hidden=true;const data=await overlayRequest('overlayTasks');recoveryPanel.replaceChildren();recoveryPanel.hidden=false;
+      const note=document.createElement('p');note.style.margin='4px 0';recoveryPanel.append(note);
+      if(view){
+        note.textContent='Playback stays paused. Pan or zoom the game toward the saved target, then check. The check finds the target without clicking or moving your camera.';
+        const label=document.createElement('div');label.textContent=data.target||'Saved target reference';recoveryPanel.append(label);
+        if(data.reference){
+          const p=data.reference,c=document.createElement('canvas');c.width=p.width;c.height=p.height;c.style.width='128px';c.style.height='128px';c.style.imageRendering='pixelated';
+          const ctx=c.getContext('2d'),pixels=ctx.createImageData(p.width,p.height);
+          p.data.forEach((v,i)=>{pixels.data.set([v,v,v,255],i*4);});ctx.putImageData(pixels,0,0);
+          ctx.strokeStyle='#ff4545';ctx.beginPath();ctx.moveTo(p.offsetX-4,p.offsetY);ctx.lineTo(p.offsetX+4,p.offsetY);ctx.moveTo(p.offsetX,p.offsetY-4);ctx.lineTo(p.offsetX,p.offsetY+4);ctx.stroke();recoveryPanel.append(c);
+        }
+        const feedback=document.createElement('p');feedback.textContent='Saved viewport: '+data.viewport.width+' × '+data.viewport.height+'. Adaptive replay can use another size.';recoveryPanel.append(feedback);
+        button('Adapt & check view',async()=>{if(targetMarker)targetMarker.hidden=true;feedback.textContent='Checking the current target…';try{const result=await overlayRequest('overlayCheckView');feedback.textContent=result.message;showTargetMarker(result.point);}catch(e){feedback.textContent=e.message;throw e;}},recoveryPanel);
+      }else{
+        note.textContent='Choose the task currently open in the game. This changes the recorder position, not game progress. Already completed actions may repeat.';
+        const search=document.createElement('input');search.type='search';search.placeholder='Search recorded tasks';search.style.width='100%';recoveryPanel.append(search);
+        const select=document.createElement('select');select.size=5;select.style.width='100%';recoveryPanel.append(select);
+        const render=()=>{select.replaceChildren();for(const t of data.tasks){const label=t.checkpoint.title+' — '+t.checkpoint.text;if(!label.toLowerCase().includes(search.value.toLowerCase()))continue;const option=document.createElement('option');option.value=String(t.index);option.textContent=label;select.append(option);}if(data.currentIndex!==null)select.value=String(data.currentIndex);};search.value='';search.oninput=render;render();
+        const resume=async index=>{if(index===null||index===''||!Number.isInteger(Number(index)))throw Error('Choose a recorded task.');if(!confirm('Resume at this task? Its recorded actions may repeat, including chat. A fresh three-minute minimum starts now.'))return;await overlayRequest('overlayResumeTask',{index:Number(index),confirmed:true});recoveryPanel.hidden=true;};
+        button('Resume selected task',()=>resume(select.value),recoveryPanel);
+        const detected=button('Resume detected task',()=>resume(data.currentIndex),recoveryPanel);detected.disabled=data.currentIndex===null;
+        const detail=document.createElement('p');detail.textContent=data.matches===1?'Current objective matched.':data.matches>1?'More than one saved checkpoint matches. Choose the correct occurrence.':'No exact match. Open the current objective in the game and reopen Tasks.';recoveryPanel.append(detail);
+      }
+      button('Move panel',()=>{const right=overlay.style.right==='10px';overlay.style.left=right?'10px':'auto';overlay.style.right=right?'auto':'10px';},recoveryPanel);
+      button('Close',()=>{recoveryPanel.hidden=true;if(targetMarker)targetMarker.hidden=true;},recoveryPanel);
+    };
+    taskButton=button('Tasks',()=>openPanel(false));viewButton=button('Adjust view',()=>openPanel(true));
   }
   for(const type of ['pointerdown','pointerup','pointermove'])window.addEventListener(type,e=>{
+    if(e.isTrusted&&targetMarker)targetMarker.hidden=true;
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
     if(type==='pointermove'&&!e.buttons)return; // Preserve every delivered drag sample, including fast pans.
     flushText();
@@ -97,6 +152,7 @@
     emit({type,clickCount,...(waitForRadial?{waitForRadial:true}:{}),x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:descriptor,checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
   },true);
   window.addEventListener('wheel',e=>{
+    if(e.isTrusted&&targetMarker)targetMarker.hidden=true;
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
     flushText();const unitX=e.deltaMode===1?16:e.deltaMode===2?innerWidth:1,unitY=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
     emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unitX,deltaY:e.deltaY*unitY,modifiers:mods(e),target:target(e.target),checkpoint:checkpoint()});

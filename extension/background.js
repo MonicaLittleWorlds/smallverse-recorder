@@ -346,6 +346,54 @@ async function pause(tabId){
   else{session.mode='paused';session.message='Paused. Resume when ready.';}
   await notify();if(session.mode==='playing'&&!session.runActive)void run(session);return snapshot();
 }
+function nextViewStep(recording,index,checkpoint){
+
+  for(let i=index;i<recording.steps.length;i++){
+    const candidate=recording.steps[i];
+    if(candidate.checkpoint?.title&&!checkpointEqual(candidate.checkpoint,checkpoint))break;
+    if(['pointerdown','wheel','text','keydown'].includes(candidate.type))return candidate;
+    if(!['checkpoint'].includes(candidate.type))break;
+  }
+  return null;
+}
+async function checkPausedView(s){
+  if(s.restartRequired||s.buttons||s.heldKeys.size)throw Error('An input was interrupted. Select the current task before resuming.');
+  if(s.reconnect)throw Error('Playback disconnected. Use the task picker to reconnect at the current objective.');
+  const index=s.index,expected=expectedCheckpoint(s.recording,index);
+  const read=async()=>{
+    if(session!==s||s.mode!=='paused'||s.index!==index)throw Error('Playback state changed. Check the view again.');
+    const p=await probe(s.tabId);
+    if(s.documentToken&&p.documentToken!==s.documentToken)throw Error('The game reloaded. Select the current task.');
+    if(!sameSpace(s.recording.startURL,p.url)||expected&&!checkpointEqual(expected,p.checkpoint))throw Error('The current objective differs. Select the matching task first.');
+    return p;
+  };
+  const state=await read(),viewport=state.viewport;
+  const probeView=async()=>{const p=await read();if(!sameViewport(p.viewport,viewport))throw Error('View resized during the check. Try again.');return p;};
+  const step=nextViewStep(s.recording,index,state.checkpoint);
+  if(!step)throw Error('No directly checkable target at this position. Select the current task or resume with normal checks.');
+  if(step.hoverIdentity)throw Error(`This hidden target requires a fresh ${step.hoverIdentity.title} hover during replay. Adjust the view, then Resume to run that check.`);
+  if(step.sceneAnchors)throw Error('This repaired target uses fixed landmarks. Restore the saved view before resuming; this check cannot relocate it.');
+  if(!step.target&&!step.patch)throw Error('No visual reference was saved for this action. The view cannot be verified automatically.');
+  const found=await stableAdaptiveTarget(step,{probe:probeView,capture:()=>capture(s.tabId,viewport),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep});
+  await probeView();
+  if(!pointInside(found,viewport))throw Error('The target is outside the current game view.');
+  // No inputs, timer changes or step advancement. Replay always checks again.
+  s.positionReplay=false;s.playbackViewport=viewport;s.coordinateOnce=false;s.needsSettle=true;s.wheelIndex=null;
+  s.message='Target found in the current view. Adaptive playback enabled. Resume will check again before acting.';
+  await notify();return {message:s.message,point:found};
+}
+async function resumeAtObjective(m,r){
+    if(session&&session.mode!=='paused')throw Error('Pause or stop playback before choosing an objective.');
+    validateRecording(r);const timing=missionTiming(r);
+    if(r.source?.retired||!sharedReviewed(r,(await chrome.storage.local.get('sharedReviews')).sharedReviews||{}))throw Error('Review the shared recording first.');
+    const observed=await probe(m.tabId);if(!sameSpace(observed.url,r.startURL))throw Error('Open the recording’s space.');
+    verifyRecoveryObjective(r,m.index,observed.checkpoint);
+    if(session)await stop('Changing playback recovery point.');
+    const verified=await attach(m.tabId,m.positionReplay===true?r.viewport:null);try{verifyRecoveryObjective(r,m.index,verified.checkpoint);}catch(error){await detach(m.tabId);throw error;}
+    await chrome.storage.local.set({playbackRecording:r});
+    session={playbackViewport:verified.viewport,tabId:m.tabId,recording:r,index:m.index,timing,positionReplay:m.positionReplay===true,documentToken:verified.documentToken,missionStarted:performance.now(),mode:'playing',heldKeys:new Map(),buttons:0,message:'Resuming from the verified objective. A fresh three-minute minimum starts now.'};
+    await notify();void run(session);return snapshot();
+}
 async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
   let extensionControl=false;
@@ -354,7 +402,24 @@ async function handle(m,sender){
     extensionControl=source.protocol===base.protocol&&source.host===base.host&&['/popup.html','/library.html'].includes(source.pathname);
   }catch{}
   const fromPage=!!sender.tab&&!extensionControl;
-  if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart'].includes(m.kind))throw Error('This command is only available in the extension controls.');
+  if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart','overlayPause','overlayTasks','overlayResumeTask','overlayCheckView'].includes(m.kind))throw Error('This command is only available in the extension controls.');
+  if(m.kind.startsWith('overlay')){
+    if(!fromPage||!gameURL(sender.url||sender.tab?.url)||!session||sender.tab.id!==session.tabId||session.mode==='recording')throw Error('Overlay controls require the active playback game tab.');
+    if(m.kind==='overlayPause')return pause(session.tabId);
+    if(session.mode!=='paused')throw Error('Pause playback before adjusting the view or choosing a task.');
+    const s=session;
+    if(m.kind==='overlayTasks'){
+      const observed=await probe(s.tabId),tasks=recoveryObjectives(s.recording);
+      const matches=sameSpace(observed.url,s.recording.startURL)?tasks.filter(t=>checkpointEqual(t.checkpoint,observed.checkpoint)):[];
+      const next=nextViewStep(s.recording,s.index,observed.checkpoint);
+      return {tasks,currentIndex:matches.length===1?matches[0].index:null,matches:matches.length,reference:next?.patch||null,target:next?.hoverIdentity?.title||next?.target?.aria||next?.target?.title||next?.target?.text||'',viewport:s.recording.viewport};
+    }
+    if(m.kind==='overlayResumeTask'){
+      if(m.confirmed!==true)throw Error('Confirm the selected task before resuming.');
+      return resumeAtObjective({tabId:s.tabId,index:m.index,positionReplay:false},s.recording);
+    }
+    if(m.kind==='overlayCheckView')return checkPausedView(s);
+  }
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};
   if(m.kind==='markFinalTask'){
     if(session?.mode!=='recording')throw Error('Start recording first.');
@@ -404,18 +469,7 @@ async function handle(m,sender){
     session.coordinateOnce=true;return pause();
   }
   if(m.kind==='recoveryObjectives'){const r=(await library())[m.id];return recoveryObjectives(r);}
-  if(m.kind==='resumeObjective'){
-    if(session&&session.mode!=='paused')throw Error('Pause or stop playback before choosing an objective.');
-    const r=(await library())[m.id];validateRecording(r);const timing=missionTiming(r);
-    if(r.source?.retired||!sharedReviewed(r,(await chrome.storage.local.get('sharedReviews')).sharedReviews||{}))throw Error('Review the shared recording first.');
-    const observed=await probe(m.tabId);if(!sameSpace(observed.url,r.startURL))throw Error('Open the recording’s space.');
-    verifyRecoveryObjective(r,m.index,observed.checkpoint);
-    if(session)await stop('Changing playback recovery point.');
-    const verified=await attach(m.tabId,m.positionReplay===true?r.viewport:null);try{verifyRecoveryObjective(r,m.index,verified.checkpoint);}catch(error){await detach(m.tabId);throw error;}
-    await chrome.storage.local.set({playbackRecording:r});
-    session={playbackViewport:verified.viewport,tabId:m.tabId,recording:r,index:m.index,timing,positionReplay:m.positionReplay===true,documentToken:verified.documentToken,missionStarted:performance.now(),mode:'playing',heldKeys:new Map(),buttons:0,message:'Resuming from the verified objective. A fresh three-minute minimum starts now.'};
-    await notify();void run(session);return snapshot();
-  }
+  if(m.kind==='resumeObjective')return resumeAtObjective(m,(await library())[m.id]);
   if(m.kind==='get')return (await library())[m.id];
   if(m.kind==='save'){
     const original=(await library())[m.recording.id];
@@ -457,7 +511,7 @@ const recoveredRecording=(async()=>{
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   const action=async()=>{await recoveredRecording;return handle(m,sender);};
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
-  const p=['start','resumeRecording','play','resumeObjective','pause','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
+  const p=['start','resumeRecording','play','resumeObjective','overlayResumeTask','overlayPause','overlayCheckView','pause','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
 chrome.commands.onCommand.addListener(name=>{void recoveredRecording.then(()=>name==='stop'?handle({kind:'stop'},{}):name==='pause'?pause():null).catch(()=>{});});
