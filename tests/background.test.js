@@ -373,3 +373,29 @@ test('in-game overlay verifies views without sending input or advancing progress
   await call('overlayResumeTask',{index:0,confirmed:true},sender);await waitFor(v=>v.status.mode==='idle');
  }finally{targetFound=true;await call('stop');currentViewport={width:1440,height:757};}
 });
+
+test('a tab switch before dispatch sends no inputs and retains a resumable position',async()=>{
+ const oldGet=chrome.tabs.get,oldSet=chrome.storage.local.set;let active=true,switched=false;
+ chrome.tabs.get=async id=>({...await oldGet(id),active});
+ chrome.storage.local.set=async values=>{await oldSet(values);if(values.activePlayback?.inFlight&&!switched){active=false;switched=true;}};
+ try{
+  const imported=await call('import',{recording:recording(click)});commands.length=0;
+  await call('play',{tabId:1,id:imported.id});const paused=await waitFor(v=>v.status.mode==='paused');
+  assert.match(paused.status.message,/not active/);assert.equal(paused.status.index,1);
+  assert.equal(local.activePlayback.inFlight,false);assert.equal(local.activePlayback.restartRequired,false);
+  assert(!commands.some(c=>c.method.startsWith('Input.')));
+  active=true;await call('pause');await waitFor(v=>v.status.mode==='idle');
+  assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,1);
+ }finally{chrome.tabs.get=oldGet;chrome.storage.local.set=oldSet;await call('stop');}
+});
+
+test('hidden game documents block named-control playback before input',async()=>{
+ const oldSend=chrome.tabs.sendMessage;
+ chrome.tabs.sendMessage=async(id,m)=>{const response=await oldSend(id,m);return m.kind==='probe'?{...response,visibility:'hidden'}:response;};
+ try{
+  const imported=await call('import',{recording:recording(click)});commands.length=0;
+  await call('play',{tabId:1,id:imported.id});const paused=await waitFor(v=>v.status.mode==='paused');
+  assert.match(paused.status.message,/view is hidden/);assert(!commands.some(c=>c.method.startsWith('Input.')));
+  assert.equal(local.activePlayback.restartRequired,false);
+ }finally{chrome.tabs.sendMessage=oldSend;await call('stop');}
+});

@@ -180,7 +180,7 @@
   observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
     if(invalidated){reply({ok:false,error:'Refresh this game tab after updating the recorder.'});return;}
-    if(m.kind==='probe')reply({motionView:motionView(),documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
+    if(m.kind==='probe')reply({visibility:document.visibilityState,motionView:motionView(),documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});

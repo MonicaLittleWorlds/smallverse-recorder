@@ -155,15 +155,36 @@ async function stop(message='Stopped. Recording saved locally.'){
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
 }
 function alive(s){if(session!==s||s.cancelled)throw Error('Cancelled');}
-async function safeInput(s,method,params){alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');s.inFlight=true;await persistPlayback();alive(s);if(!gameURL((await chrome.tabs.get(s.tabId)).url))throw Error('The tab left SmallVerse.');alive(s);await command(s.tabId,method,params);}
-async function gate(s){
-  while(s.mode==='paused'){alive(s);await sleep(100);}alive(s);
+async function inputContext(s){
+  alive(s);
+  const tab=await chrome.tabs.get(s.tabId);alive(s);
+  if(!tab.active)throw Error('Game tab is not active. Return to it, then Resume; playback position is saved.');
   const p=await probe(s.tabId);alive(s);
+  if(p.visibility==='hidden')throw Error('Game view is hidden. Make it visible, then Resume.');
   if(s.documentToken&&p.documentToken&&s.documentToken!==p.documentToken){s.reconnect=true;throw Error('Game document reloaded. Saved playback position retained.');}
   const step=s.recording.steps[s.index];
-  if(!sameSpace(step?.url||s.recording.startURL,p.url))throw Error('Different space. Return to the recorded space, then Retry.');
-  if(!sameViewport(p.viewport,playbackViewport(s)))throw Error('Game view changed during playback. Restore its size, or stop and resume from the current objective in adaptive mode.');
+  if(!sameSpace(step?.url||s.recording.startURL,tab.url)||!sameSpace(step?.url||s.recording.startURL,p.url))throw Error('Different space. Return to the recorded space, then Retry.');
+  if(!sameViewport(p.viewport,playbackViewport(s)))throw Error('Game view changed during playback. Restore its size, or use Adjust view while paused.');
   return p;
+}
+async function safeInput(s,method,params){
+  alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');
+  if(s.mode!=='playing')throw Error('Playback paused before sending input. Resume when ready.');
+  await inputContext(s);
+  const previouslyInFlight=!!s.inFlight;s.inFlight=true;await persistPlayback();
+  try{
+    await inputContext(s);
+    if(s.mode!=='playing'||s.reconnect)throw Error('Playback paused or disconnected before sending input.');
+  }catch(error){
+    // No command was dispatched here. Preserve uncertainty only for an earlier
+    // command in this action, rather than forcing task restart after a tab switch.
+    s.inFlight=previouslyInFlight;if(session===s)await persistPlayback();throw error;
+  }
+  await command(s.tabId,method,params);
+}
+async function gate(s){
+  while(s.mode==='paused'){alive(s);await sleep(100);}alive(s);
+  return inputContext(s);
 }
 async function waitCheckpoint(s,expected,timeout=15000){
   if(!expected?.title)return;

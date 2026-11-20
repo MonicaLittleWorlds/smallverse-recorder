@@ -2,7 +2,13 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.7.4 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.7.5 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+
+## Playback context checks (v0.7.5)
+
+Chrome remains the supported browser. Every replay input now checks that the game tab is active, the document is not reported hidden, the space and viewport still match, and the document has not reloaded. These checks run again after writing the progress journal, immediately before dispatch. Named controls and typing now receive the same visibility protection as screenshot-based actions.
+
+If a context check fails before any command in that action was sent, the saved position remains resumable without falsely marking an interrupted input. If an earlier command was already sent or held input was interrupted, objective recovery remains required. Returning to the game does not automatically resume playback; use Resume. These checks do not provide background playback or guarantee that a window on another desktop is visible to the user.
 
 ## In-game recovery and view guidance (v0.7.4)
 
