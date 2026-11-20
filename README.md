@@ -2,7 +2,15 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.7.2 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.7.3 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+
+## Camera gestures and local animation (v0.7.3)
+
+Continuous wheel gestures retain fractional deltas, both scroll axes, pinch modifiers and relative cursor movement after target relocation. Small cursor movement and intervening observations of the same objective no longer split a gesture and trigger image matching halfway through zooming. Different objectives, other inputs, modifier changes and gesture gaps still require a new check. Page-unit horizontal scroll uses the saved viewport width, vertical scroll its height. Named wheel targets are saved when available. Mouse drag paths retain their recorded CSS-pixel distances after relocating the starting target, independent of display pixel density.
+
+The settling check can now recognize a small stationary animation footprint over eight frames. It learns the changing pixels in the first four frames, then requires four more frames with changes confined to that footprint (at most 2% of sampled world pixels). Widespread camera movement, a subject moving outside that area, and featureless scenes still fail. This is a bounded visual heuristic, not avatar tracking; it cannot prove arrival or handle all animations. The next target and objective must still pass their existing checks. Pause reasons now appear in the game overlay.
+
+Automated tests cover wheel and trackpad-style deltas, pinch modifiers, drag replay at 1440×757 and 1470×956, stationary animation, walking and camera movement. A live mission using a second physical device remains unverified. Pinch is supported only when Chrome delivers it to the game as wheel input; browser/OS zoom and desktop gestures are not portable game actions. Keep the game tab visible and the window size fixed. Missing visual references and previously uncaptured inputs cannot be reconstructed from deleted recordings.
 
 ## Different display and game sizes (v0.7.2)
 

@@ -87,3 +87,13 @@ test('extension reload catches synchronous and asynchronous invalidation and sto
   const overlay=s.root.children.find(e=>e.id==='sv-recorder-overlay');assert.match(overlay.children[0].textContent,/Refresh this game tab/);assert.equal(overlay.hidden,false);
  }
 });
+
+test('wheel input records device-independent pixel amounts, both axes, page units and named zoom controls',()=>{
+ const s=setup(),canvas=new s.Element('CANVAS'),button=new s.Element('BUTTON');button.textContent='Zoom in';
+ s.event('wheel',{target:canvas,deltaMode:0,deltaX:1.25,deltaY:-3.75,ctrlKey:true});
+ s.event('wheel',{target:canvas,deltaMode:2,deltaX:1,deltaY:-1});
+ s.event('wheel',{target:button,deltaMode:0,deltaX:0,deltaY:-10});
+ const events=s.messages.filter(m=>m.kind==='event').map(m=>m.step);
+ assert.equal(events[0].deltaX,1.25);assert.equal(events[0].deltaY,-3.75);assert.equal(events[0].modifiers,2);
+ assert.equal(events[1].deltaX,1440);assert.equal(events[1].deltaY,-757);assert.equal(events[2].target.text,'Zoom in');
+});

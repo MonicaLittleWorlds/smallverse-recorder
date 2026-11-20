@@ -8,7 +8,7 @@ import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,sameWheelGesture} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,continuesWheelGesture} from './core.js';
 let progressQueue=Promise.resolve();
 function persistPlayback(){const progress=playbackProgress(session);const write=()=>chrome.storage.local.set({activePlayback:progress});progressQueue=progressQueue.then(write,write);return progressQueue;}
 let lastCaptureAt=0;
@@ -29,7 +29,7 @@ async function notify(){
   const s=snapshot();await persistPlayback();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.mode==='paused'?`Paused · ${s.index}/${s.count} · ${s.message}`:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -241,7 +241,7 @@ async function execute(s,step){
   }
 
   if(step.type==='checkpoint'){await waitCheckpoint(s,step.checkpoint,30000);return;}
-  if(!s.positionReplay&&s.needsSettle&&!s.buttons&&!s.heldKeys.size&&['pointerdown','text','keydown','wheel'].includes(step.type)&&!(step.type==='wheel'&&s.wheelIndex===s.index-1&&sameWheelGesture(s.recording.steps[s.index-1],step))){
+  if(!s.positionReplay&&s.needsSettle&&!s.buttons&&!s.heldKeys.size&&['pointerdown','text','keydown','wheel'].includes(step.type)&&!(step.type==='wheel'&&continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index))){
     s.message='Waiting for walking and camera motion to settle…';await notify();
     await waitForMotion({probe:()=>gate(s),capture:()=>capture(s.tabId,playbackViewport(s)),sleep});alive(s);
     s.needsSettle=false;s.message='Scene settled; checking the next target.';
@@ -263,8 +263,10 @@ async function execute(s,step){
   }else if(step.type==='wheel'){
     // Validate the start of a continuous wheel gesture, not intermediate camera frames.
     // Every following click and each new wheel gesture still checks alignment.
-    if(s.wheelIndex!==s.index-1||!sameWheelGesture(s.recording.steps[s.index-1],step))s.wheelPoint=await point(s,step);
-    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',x:s.wheelPoint.x,y:s.wheelPoint.y,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});s.wheelIndex=s.index;s.needsSettle=true;
+    if(!continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index)){s.wheelPoint=await point(s,step);s.wheelOrigin={x:step.x,y:step.y};}
+    const wheelPoint={x:s.wheelPoint.x+step.x-s.wheelOrigin.x,y:s.wheelPoint.y+step.y-s.wheelOrigin.y};
+    if(!pointInside(wheelPoint,playbackViewport(s)))throw Error('Scroll position is outside the current game view.');
+    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',...wheelPoint,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});s.wheelIndex=s.index;s.needsSettle=true;
   }else if(step.type==='text'){
     const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p?.editable)throw Error('The recorded text field is not available.');
     const selected=await page(s.tabId,{kind:'selectText',target:step.target});if(!selected?.ok)throw Error('Could not focus the recorded text field.');

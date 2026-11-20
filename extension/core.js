@@ -167,7 +167,7 @@ function wholePointMatches(frame,patch,x,y){
 
 export function sameWheelGesture(previous,step){
   return previous?.type==='wheel'&&step.type==='wheel'&&step.at>=previous.at&&step.at-previous.at<=180&&
-    (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=4;
+    (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=64;
 }
 
 // Partial occlusion check: require multiple detailed regions at the original position.
@@ -202,4 +202,12 @@ export function recordedPointMatches(frame,patch,x,y){
     if(stable.every(t=>matches(t,dx,dy)))return false;
   }
   return true;
+}
+
+// Objective observations can arrive between wheel samples without ending a gesture.
+export function continuesWheelGesture(steps,previousIndex,index){
+  if(!Number.isInteger(previousIndex)||previousIndex<0||previousIndex>=index)return false;
+  const previous=steps[previousIndex],step=steps[index];
+  if(!sameWheelGesture(previous,step)||!checkpointEqual(previous.checkpoint,step.checkpoint))return false;
+  return steps.slice(previousIndex+1,index).every(s=>s.type==='checkpoint'&&checkpointEqual(previous.checkpoint,s.checkpoint));
 }

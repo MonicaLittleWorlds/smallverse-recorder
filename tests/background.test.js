@@ -196,14 +196,16 @@ test('position replay refuses unverified canvas and button clicks without sendin
   }
 });
 
-test('drag replay preserves middle button and final movement before release',async()=>{
+test('drag replay preserves middle button and final movement at both game viewport sizes',async()=>{
   const moves=[{...click[0],button:'middle',buttons:4},{type:'pointermove',at:1,x:130,y:140,button:'none',buttons:4},{...click[1],at:2,button:'middle',x:145,y:160}];
-  const imported=await call('import',{recording:recording(moves)});
-  commands.length=0;await call('play',{tabId:1,id:imported.id});await waitFor(v=>v.status.mode==='idle');
-  const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
-  const drag=events.filter(e=>e.type==='mouseMoved'&&e.buttons===4);
-  assert.equal(drag.length,2);assert(drag.every(e=>e.button==='middle'));
-  assert.equal(drag.at(-1).x,195);assert.equal(events.at(-1).x,195);
+  try{for(const viewport of [{width:1440,height:757},{width:1470,height:956}]){
+    currentViewport=viewport;const imported=await call('import',{recording:recording(moves)});
+    commands.length=0;await call('play',{tabId:1,id:imported.id});await waitFor(v=>v.status.mode==='idle');
+    const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent').map(c=>c.params);
+    const drag=events.filter(e=>e.type==='mouseMoved'&&e.buttons===4);
+    assert.equal(drag.length,2);assert(drag.every(e=>e.button==='middle'));
+    assert.equal(drag.at(-1).x,195);assert.equal(events.at(-1).x,195);
+  }}finally{await call('stop');currentViewport={width:1440,height:757};}
 });
 
 test('position replay verifies a control at the original point without needing a visual patch',async()=>{
@@ -337,4 +339,17 @@ test('adaptive capture uses the actual larger viewport and resolves canvas targe
   await call('play',{tabId:1,id:imported.id,positionReplay:false});await waitFor(v=>v.status.mode==='idle');
   const pressed=commands.find(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed');assert.equal(pressed.params.x,824);assert.equal(pressed.params.y,624);assert(captures>=2);
  }finally{await call('stop');currentViewport={width:1440,height:757};chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
+});
+
+test('trackpad wheel sequence retains horizontal, fractional, pinch and cursor motion across viewport sizes and observations',async()=>{
+ currentViewport={width:1470,height:956};targetFound=true;
+ const wheel={type:'wheel',at:0,x:100,y:120,deltaX:1.25,deltaY:-6.5,modifiers:2,target:{tag:'button',text:'Search'},checkpoint:cp};
+ try{
+  const imported=await call('import',{recording:recording([wheel,{type:'checkpoint',at:10,checkpoint:cp},{...wheel,at:20,x:112,y:127,target:null,deltaX:-2.5,deltaY:3.75}])});
+  commands.length=0;await call('play',{tabId:1,id:imported.id});await waitFor(v=>v.status.mode==='idle');
+  const events=commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mouseWheel').map(c=>c.params);
+  assert.equal(events.length,2);
+  assert.deepEqual(events.map(e=>[e.x,e.y,e.deltaX,e.deltaY,e.modifiers]),[[150,160,1.25,-6.5,2],[162,167,-2.5,3.75,2]]);
+  assert(!commands.some(c=>c.method.startsWith('Emulation.')));
+ }finally{await call('stop');currentViewport={width:1440,height:757};}
 });

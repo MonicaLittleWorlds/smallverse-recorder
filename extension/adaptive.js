@@ -36,12 +36,39 @@ export function sceneStill(a,b,view={}){
  // Low-detail/black views cannot establish that movement has finished.
  return samples>=500&&detail>=40&&changed<=Math.max(3,samples*.0003);
 }
+// Learn only a small stationary animation footprint. A moving avatar/camera
+// introduces changes outside that footprint, restarting the observation window.
+// This remains a visual heuristic; target/objective checks still follow it.
+export function localizedAnimationsSettled(frames,view={}){
+ if(frames.length<8)return false;
+ const first=frames[0],last=frames.at(-1);
+ if(!frames.every(f=>f.width===first.width&&f.height===first.height&&f.scaleX===first.scaleX&&f.scaleY===first.scaleY))return false;
+ if(!sceneStill(last,last,view))return false;
+ const region=view.region||{x:0,y:0,width:last.width*last.scaleX,height:last.height*last.scaleY},excluded=view.exclude||[];
+ const valid=[],footprint=new Set();
+ for(let y=2;y<last.height-2;y+=2)for(let x=2;x<last.width-2;x+=2){
+  const cx=x*last.scaleX,cy=y*last.scaleY;
+  if(cx<region.x||cy<region.y||cx>=region.x+region.width||cy>=region.y+region.height||excluded.some(r=>cx>=r.x&&cy>=r.y&&cx<r.x+r.width&&cy<r.y+r.height))continue;
+  const i=y*last.width+x;valid.push(i);
+  for(let k=1;k<=3;k++)if(Math.abs(frames[k].data[i]-frames[k-1].data[i])>10){footprint.add(i);break;}
+ }
+ if(!footprint.size||footprint.size>valid.length*.02)return false;
+ // No expanding mask: even slow translation must wait. Compare later frames
+ // to the initial frame as well to catch accumulated sub-threshold drift.
+ for(let k=4;k<frames.length;k++){
+  let outside=0;
+  for(const i of valid)if(!footprint.has(i)&&(Math.abs(frames[k].data[i]-frames[k-1].data[i])>10||Math.abs(frames[k].data[i]-first.data[i])>10))outside++;
+  if(outside>2)return false;
+ }
+ return true;
+}
 export async function waitForMotion({probe,capture,sleep,maxFrames=60}){
- let previous=null,stable=0;
+ let previous=null,stable=0;const history=[];
  for(let i=0;i<maxFrames;i++){
   const state=await probe(),frame=await capture();await probe();
   stable=sceneStill(previous,frame,state.motionView)?stable+1:0;previous=frame;
-  if(stable>=3)return;
+  history.push(frame);if(history.length>8)history.shift();
+  if(stable>=3||localizedAnimationsSettled(history,state.motionView))return;
   await sleep(100);
  }
  throw Error('Walking or camera motion has not settled visibly. Playback paused; no next action was sent.');

@@ -31,3 +31,16 @@ test('walking and camera actions trigger settling but chat and menu actions do n
  assert(startsMovement({type:'pointerdown',target:{aria:'Walk To'}}));assert(startsMovement({type:'pointerdown',target:{title:'Zoom out'}}));
  assert(!startsMovement({type:'pointerdown',target:{text:'Check'}}));assert(!startsMovement({type:'text'}));
 });
+
+test('stationary local animation settles, but walking out of its footprint and camera drift do not',async()=>{
+ const {localizedAnimationsSettled}=await import('../extension/adaptive.js');
+ const base={width:720,height:379,scaleX:2,scaleY:2,data:Uint8Array.from({length:720*379},(_,i)=>(i*47+Math.floor(i/720)*13)%256)};
+ const sequence=(move=false)=>Array.from({length:8},(_,k)=>{
+  const f=structuredClone(base);for(let y=100;y<120;y++)for(let x=100+(move?k*2:0);x<120+(move?k*2:0);x++)f.data[y*720+x]=(f.data[y*720+x]+(k%2?80:160))%256;return f;
+ });
+ const idle=sequence();assert(localizedAnimationsSettled(idle));assert(!localizedAnimationsSettled(sequence(true)));
+ const camera=Array.from({length:8},(_,k)=>({...base,data:Uint8Array.from(base.data,(_,i)=>base.data[(i+k)%base.data.length])}));assert(!localizedAnimationsSettled(camera));
+ assert(!localizedAnimationsSettled(Array.from({length:8},()=>frame())));
+ let count=0;await waitForMotion({probe:async()=>({}),capture:async()=>idle[count++],sleep:async()=>{},maxFrames:8});assert.equal(count,8);
+ await assert.rejects(waitForMotion({probe:async()=>({}),capture:(()=>{let k=0;return async()=>sequence(true)[k++];})(),sleep:async()=>{},maxFrames:8}),/not settled/);
+});

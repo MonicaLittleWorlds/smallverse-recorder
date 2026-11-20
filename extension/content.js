@@ -98,8 +98,8 @@
   },true);
   window.addEventListener('wheel',e=>{
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
-    flushText();const unit=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
-    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unit,deltaY:e.deltaY*unit,modifiers:mods(e),checkpoint:checkpoint()});
+    flushText();const unitX=e.deltaMode===1?16:e.deltaMode===2?innerWidth:1,unitY=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
+    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unitX,deltaY:e.deltaY*unitY,modifiers:mods(e),target:target(e.target),checkpoint:checkpoint()});
   },{capture:true,passive:true});
   document.addEventListener('input',e=>{
     if(mode!=='recording'||!e.isTrusted||sensitive(e.target)||own(e.target)||!editable(e.target))return;
