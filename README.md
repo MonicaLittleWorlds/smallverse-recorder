@@ -2,7 +2,13 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.7.2 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+
+## Different display and game sizes (v0.7.2)
+
+Adaptive replay can start with a different game viewport from the recording, including 1470×956 CSS pixels. Leave **Use exact saved positions** unchecked. Screenshots use the actual game viewport and visible targets are located again before clicking; wheel gestures use their relocated target too. Hidden-object repairs require fresh matching hover labels or landmarks before clicking a translated candidate. This does not guarantee every old recording will match at every size.
+
+Display resolution includes space used by Chrome and the operating system, so a 1470×956 display usually has a smaller game viewport. No window resizing or viewport emulation is used. Keep the window size unchanged during each run; a mid-run resize pauses playback. Exact-position mode still requires the recorded viewport. Recovery preserves the viewport used for that playback session. Automated tests cover 1470×956 DOM and canvas target replay, Retina screenshot scaling, rejection in exact-position mode, and missing hidden-target labels. A complete live mission at this size remains unverified.
 
 ## Reload recovery (v0.7.1)
 
@@ -10,7 +16,7 @@ A game tab whose extension context was invalidated catches both immediate and as
 
 ## Walking and camera adaptation (v0.7.0)
 
-Adaptive playback is now the default. Leave **Use exact saved positions** unchecked. Named controls are located at their current visible position and must settle across two observations. Canvas targets are searched across the current screenshot at 0.5×–2× their recorded size; ambiguous, missing or low-detail targets pause without clicking. The scaled click offset is preserved. This handles translation and uniform zoom, not rotation, unseen objects or major appearance changes. The browser viewport must still match the recording; no window resizing or viewport emulation is used.
+Adaptive playback is now the default. Leave **Use exact saved positions** unchecked. Named controls are located at their current visible position and must settle across two observations. Canvas targets are searched across the current screenshot at 0.5×–2× their recorded size; ambiguous, missing or low-detail targets pause without clicking. The scaled click offset is preserved. This handles translation and uniform zoom, not rotation, unseen objects or major appearance changes. Since v0.7.2, adaptive replay supports a different initial viewport; no window resizing or viewport emulation is used.
 
 After canvas clicks, recorded Walk To actions, camera controls, drags and wheel gestures, playback waits for three quiet frame intervals before the next input, up to about 40 seconds. It measures visible world motion while excluding detected dialogs, chat and toolbars. The following target and full objective are still checked. This is a visual settling heuristic: it cannot prove path completion, distinguish a blocked avatar from an arrived one, or reliably ignore every idle animation. Persistent animation or a dark/featureless scene can pause safely. Stop/Pause remain available during waiting; settling is rechecked after recovery.
 
@@ -76,7 +82,7 @@ There is no build step, paid service, API key, or server. Node.js is only needed
 
 1. Go to a known starting location and mission state. Record from **before accepting the mission** if you want acceptance included in replay.
 2. Click the extension, enter the mission name, then **Start recording**. Chrome displays its debugging banner.
-3. The game is rendered at **1440 × 757 CSS pixels**, based on the original user's game view. Smaller browser windows fit that game view into their available space. Display pixel density is normalized to 1 for screenshot matching; the physical monitor resolution does not need to match.
+3. The recorder saves the actual game viewport without resizing your window. Keep the game tab active and its window size unchanged during recording. Display pixel density is accounted for during screenshot capture; physical monitor resolution does not need to match for adaptive playback.
 4. Play normally. Mouse presses/releases, dragging, wheel input, keyboard actions, game text entry, and objective dialog changes are saved. The objective's Continue button does **not** need to be clicked unless the game actually requires it.
 5. Use the small **Stop** control, **Escape**, or **Alt+Shift+S**. Steps save locally as you play.
 6. Open **Mission library → Review / Export**. Add starting instructions, in-game zoom, camera direction, prerequisites, and any timing constraints. Review text and visual patches.
@@ -169,7 +175,7 @@ A normal download is not an administrator version. Repository permissions determ
 |---|---|
 | `identity` | User-initiated GitHub sign-in through the configured publishing service. |
 | Publishing service host access | Upload explicitly reviewed mission JSON to the owner-configured HTTPS service. |
-| `debugger` | Trusted mouse/keyboard replay, screenshots, and standard game viewport. Chrome gives this permission broad capabilities; this extension's code only attaches to validated SmallVerse space URLs. |
+| `debugger` | Trusted mouse/keyboard replay. Chrome gives this permission broad capabilities; this extension's code only attaches to validated SmallVerse space URLs. |
 | `alarms` | Periodic public catalog checks while Chrome runs. |
 | `storage`, `unlimitedStorage` | Save mission recordings, including small visual templates, locally. |
 | `scripting`, `activeTab` | Install the recorder in an already-open game tab and identify the selected tab. |
@@ -185,7 +191,7 @@ npm run check
 npm test
 ```
 
-No npm dependencies are required. Twenty-six tests exercise sync/version review, offline cache preservation, personal-copy isolation, sharing submission preparation, catalog publishing, and the three-minute hold (including cancellation, pause and fallback), marker validation/portability, content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
+No npm dependencies are required. Automated tests exercise sync/version review, offline cache preservation, personal-copy isolation, sharing submission preparation, catalog publishing, and the three-minute hold (including cancellation, pause and fallback), marker validation/portability, content capture, field flushing before Enter, password exclusion, trusted-event filtering, durable saving, exact URL restrictions, viewport configuration, DOM-target replay, pause/stop behavior, export sanitization, import validation, and matching/refusal of image targets. Tests use simulated Chrome APIs and DOM events, not a live browser or game.
 
 - `extension/content.js`: input capture and DOM checkpoint/target extraction.
 - `extension/background.js`: capture, persistence, viewport, playback and sharing reads.
@@ -222,4 +228,4 @@ Position replay now verifies a detailed visual reference at each saved click and
 
 ### Version 0.6.7 capture change
 
-Periodic images now use Chrome tabs.captureVisibleTab with serialized calls at least 550 ms apart. Neither recording nor replay forces device metrics or uses debugger screenshots. New recordings store the actual browser content size. Replay refuses a different size and shows the required dimensions; keep the game tab active and the window size unchanged. This replaces earlier standard-viewport behavior.
+Periodic images now use Chrome tabs.captureVisibleTab with serialized calls at least 550 ms apart. Neither recording nor replay forces device metrics or uses debugger screenshots. New recordings store the actual browser content size. Exact-position replay refuses a different size and shows the required dimensions; v0.7.2 adaptive replay accepts a different initial size. Keep the game tab active and the window size unchanged during each run. This replaces earlier standard-viewport behavior.

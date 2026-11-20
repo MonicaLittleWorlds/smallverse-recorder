@@ -4,6 +4,7 @@ mock.method(performance,'now',()=>{if(autoClock)clock+=200000;return clock;});
 import assert from 'node:assert/strict';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const listeners={},local={},temporary={},commands=[];
+let currentViewport={width:1440,height:757};
 let cp={title:'SEARCH DEBRIS',text:'Find food'},targetFound=true,url='https://smallverse.app/space/easterisland';
 const event=name=>({addListener:fn=>listeners[name]=fn});
 const storage=object=>({get:async key=>structuredClone({[key]:object[key]}),set:async values=>Object.assign(object,structuredClone(values))});
@@ -15,7 +16,7 @@ globalThis.chrome={
   alarms:{create:async()=>{},onAlarm:event('alarm')},
   scripting:{executeScript:async()=>{}},
   tabs:{get:async id=>({id,url,active:true,windowId:1}),captureVisibleTab:async()=>{commands.push({method:'captureVisibleTab'});throw Error('Screenshots mocked unavailable');},onUpdated:event('updated'),onRemoved:event('removed'),sendMessage:async(_id,m)=>{
-    if(m.kind==='probe')return {url,viewport:{width:1440,height:757},checkpoint:cp};
+    if(m.kind==='probe')return {url,viewport:currentViewport,checkpoint:cp};
     if(m.kind==='verifyPoint')return {matches:targetFound&&m.target?.text==='Search'};
     if(m.kind==='resolve')return targetFound?{x:150,y:160,editable:true}:null;
     return {ok:true};
@@ -314,4 +315,26 @@ test('adaptive replay waits after Walk To before inserting chat text',async()=>{
 test('extension controls with query or fragment remain authorized without trusting lookalike pages',async()=>{
  for(const suffix of ['?view=shared','#review'])assert((await call('status',{}, {url:'chrome-extension://recorder/library.html'+suffix,tab:{id:9}})).recordings);
  for(const address of ['https://recorder/library.html','chrome-extension://other/library.html','chrome-extension://recorder/unknown.html'])await assert.rejects(call('status',{}, {url:address,tab:{id:9}}),/extension controls/);
+});
+
+test('adaptive replay supports a 1470x956 viewport and exact-position replay still rejects mismatches',async()=>{
+ currentViewport={width:1470,height:956};url='https://smallverse.app/space/easterisland';cp={title:'Size test',text:'Click the control'};targetFound=true;
+ try{
+  const imported=await call('import',{recording:recording(click)});
+  commands.length=0;await assert.rejects(call('play',{tabId:1,id:imported.id,positionReplay:true}),/must match/);assert(!commands.some(c=>c.method.startsWith('Input.')));
+  commands.length=0;await call('play',{tabId:1,id:imported.id,positionReplay:false});await waitFor(v=>v.status.mode==='idle');
+  assert(commands.some(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed'&&c.params.x===150&&c.params.y===160));
+  assert(!commands.some(c=>c.method.startsWith('Emulation.')));
+ }finally{await call('stop');currentViewport={width:1440,height:757};}
+});
+test('adaptive capture uses the actual larger viewport and resolves canvas targets there',async()=>{
+ const oldCapture=chrome.tabs.captureVisibleTab,oldBitmap=globalThis.createImageBitmap,oldCanvas=globalThis.OffscreenCanvas;currentViewport={width:1470,height:956};let captures=0;
+ const patch={width:24,height:24,offsetX:12,offsetY:12,data:Array.from({length:576},(_,i)=>(i*47+(i%24)**2*31)%256)};
+ chrome.tabs.captureVisibleTab=async()=>{captures++;return 'data:text/plain,test';};globalThis.createImageBitmap=async()=>({width:2940,height:1912,close(){}});
+ globalThis.OffscreenCanvas=class{constructor(w,h){assert.equal(w,735);assert.equal(h,478);}getContext(){return {drawImage(){},getImageData(){const data=new Uint8Array(735*478*4);for(let y=0;y<24;y++)for(let x=0;x<24;x++){const i=((300+y)*735+400+x)*4;data.fill(patch.data[y*24+x],i,i+3);}return {data};}};}};
+ try{
+  const imported=await call('import',{recording:recording([{...click[0],target:null,patch},click[1]])});commands.length=0;
+  await call('play',{tabId:1,id:imported.id,positionReplay:false});await waitFor(v=>v.status.mode==='idle');
+  const pressed=commands.find(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed');assert.equal(pressed.params.x,824);assert.equal(pressed.params.y,624);assert(captures>=2);
+ }finally{await call('stop');currentViewport={width:1440,height:757};chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
 });
