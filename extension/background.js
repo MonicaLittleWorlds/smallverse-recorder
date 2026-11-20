@@ -1,5 +1,5 @@
 import {sameViewport,playbackViewport,centeredPoint,pointInside} from './viewport.js';
-import {waitForMotion,stableAdaptiveTarget,startsMovement} from './adaptive.js';
+import {waitForMotion,stableAdaptiveTarget,startsMovement,needsWorldSettle} from './adaptive.js';
 import {waitForHoverIdentity} from './hover.js';
 import {waitForScene} from './scene.js';
 import {waitForRadialControl} from './radial.js';
@@ -262,7 +262,7 @@ async function execute(s,step){
   }
 
   if(step.type==='checkpoint'){await waitCheckpoint(s,step.checkpoint,30000);return;}
-  if(!s.positionReplay&&s.needsSettle&&!s.buttons&&!s.heldKeys.size&&['pointerdown','text','keydown','wheel'].includes(step.type)&&!(step.type==='wheel'&&continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index))){
+  if(!s.positionReplay&&s.needsSettle&&needsWorldSettle(step)&&!s.buttons&&!s.heldKeys.size&&['pointerdown','text','keydown','wheel'].includes(step.type)&&!(step.type==='wheel'&&continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index))){
     s.message='Waiting for walking and camera motion to settle…';await notify();
     await waitForMotion({probe:()=>gate(s),capture:()=>capture(s.tabId,playbackViewport(s)),sleep});alive(s);
     s.needsSettle=false;s.message='Scene settled; checking the next target.';

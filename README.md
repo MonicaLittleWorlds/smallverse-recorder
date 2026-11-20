@@ -2,7 +2,13 @@
 
 A personal, open-source Chrome extension for teaching reusable SmallVerse recordings by playing: **Record → play the mission → Stop → replay later**. Record another mission without writing another script.
 
-**Status: v0.7.5 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+**Status: v0.7.6 preview; community publishing service connected.** Automated tests cover recording, replay control flow, imports, and visual matching. A real SmallVerse mission has **not yet been successfully replayed with this extension**. The earlier observed playthrough was not recorded by this program. It is not a general AI player and does not infer missing steps or solve new missions independently.
+
+## Stable mission controls in animated rooms (v0.7.6)
+
+Adaptive replay no longer waits for the entire world to settle before clicking an identifiable, non-movement UI button. This fixes Bell Boy pausing at 2/381 before its mission launcher because room animation kept the world-motion check active. Mission launch/acceptance buttons, scoped dialog controls and radial actions still require their own unique visible target and stable position; radial proximity and objective checks remain in force.
+
+Pending motion is not cleared by this exception. Subsequent world clicks, typing, keyboard input and new wheel gestures still require settling. Walk/zoom/rotate controls also retain the world wait. This addresses the observed opening-button false pause, not every possible animation or movement pause.
 
 ## Playback context checks (v0.7.5)
 

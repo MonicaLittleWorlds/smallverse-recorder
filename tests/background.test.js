@@ -399,3 +399,16 @@ test('hidden game documents block named-control playback before input',async()=>
   assert.equal(local.activePlayback.restartRequired,false);
  }finally{chrome.tabs.sendMessage=oldSend;await call('stop');}
 });
+
+test('pending world motion does not block a stable mission button but still protects later typing',async()=>{
+ const walk=[{...click[0],target:{tag:'button',title:'Walk towards this item'}},click[1]];
+ const mission=[{...click[0],at:5,target:{tag:'button',aria:'The Bell Boy'}},{...click[1],at:6}];
+ const typed={type:'text',at:8,value:'test',target:{tag:'input',title:'Type here to chat'}};
+ const imported=await call('import',{recording:recording([...walk,...mission,typed])});commands.length=0;
+ try{
+  await call('play',{tabId:1,id:imported.id});const state=await waitFor(v=>v.status.mode==='paused');
+  assert.equal(state.status.index,5); // Menu completed; world check still required before typing.
+  assert.equal(commands.filter(c=>c.method==='Input.dispatchMouseEvent'&&c.params.type==='mousePressed').length,2);
+  assert(!commands.some(c=>c.method==='Input.insertText'));
+ }finally{await call('stop');}
+});

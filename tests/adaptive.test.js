@@ -44,3 +44,9 @@ test('stationary local animation settles, but walking out of its footprint and c
  let count=0;await waitForMotion({probe:async()=>({}),capture:async()=>idle[count++],sleep:async()=>{},maxFrames:8});assert.equal(count,8);
  await assert.rejects(waitForMotion({probe:async()=>({}),capture:(()=>{let k=0;return async()=>sequence(true)[k++];})(),sleep:async()=>{},maxFrames:8}),/not settled/);
 });
+
+test('stable menu buttons do not require an idle world, while world and typing actions do',async()=>{
+ const {needsWorldSettle}=await import('../extension/adaptive.js');
+ for(const target of [{tag:'button',aria:'The Bell Boy'},{tag:'button',title:'Accept this mission'},{tag:'button',text:'*'},{tag:'button',dialog:'Task',index:0}])assert(!needsWorldSettle({type:'pointerdown',target}));
+ for(const step of [{type:'pointerdown'},{type:'text'},{type:'wheel'},{type:'keydown'},{type:'pointerdown',target:{tag:'button',title:'Walk towards this item'}},{type:'pointerdown',target:{tag:'button',title:'Zoom in'}}])assert(needsWorldSettle(step));
+});

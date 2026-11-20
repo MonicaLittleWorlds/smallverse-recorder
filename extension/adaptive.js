@@ -91,3 +91,12 @@ export function startsMovement(step){
  if(!step.target)return true;
  return /\b(walk\s*(to|towards)|zoom|rotate view)\b/i.test([step.target.aria,step.target.title,step.target.text].join(' '));
 }
+
+// A visible, uniquely resolved UI button does not require an idle world behind
+// it. Its own location is checked twice by point()/the radial guard. Keep the
+// pending world-settle requirement for subsequent world and typing actions.
+export function needsWorldSettle(step){
+ const t=step.target;
+ const identifiedButton=step.type==='pointerdown'&&t?.tag==='button'&&(t.aria||t.title||t.text||t.dialog);
+ return !(identifiedButton&&!startsMovement(step));
+}
