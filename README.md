@@ -1,5 +1,9 @@
 # SmallVerse Mission Recorder
 
+## Exporting short tests (v0.7.9)
+
+Local Export JSON now accepts reviewed partial recordings and capture tests without mission timer markers. Saving first is not required. Invalid timing marked reviewed is downgraded to unreviewed in the exported copy without changing the saved recording. The input-review checkbox and recording-format validation remain required. Playback and Share to GitHub still require valid reviewed mission timing. This allows capture diagnostics to be exported without inventing first-objective or completion markers.
+
 ## Recording image coverage (v0.7.8)
 
 This is a recording-only capture repair; classic playback stays unchanged. A bounded in-memory history of twelve screenshots replaces the single latest-frame slot. Delayed input messages can select their actual pre-action frame instead of losing it when a newer screenshot arrives. If a qualifying capture is still decoding, the recorder waits up to 1.5 seconds for that existing capture. Capture completion must precede the action, frame age remains under 1.4 seconds, and URL/document identity must match. Post-action, stale, or different-document images are never substituted. Full frames are not saved or exported.

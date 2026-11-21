@@ -205,3 +205,12 @@ export function recordedPointMatches(frame,patch,x,y){
   }
   return true;
 }
+
+// Local backup/diagnostic exports are allowed before mission timing is configured.
+// Incomplete timing must never be advertised as reviewed in the downloaded copy.
+export function exportForReview(recording,{reviewed=false}={}){
+ if(!reviewed)throw Error('Review the recording and check the review box first.');
+ const result=exportRecording(validateRecording(recording),{notes:recording.notes||''});
+ if(result.timingReviewed){try{missionTiming(result);}catch{result.timingReviewed=false;}}
+ return result;
+}

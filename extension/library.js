@@ -1,5 +1,5 @@
 import {learnOptionalPopups,popupCandidate} from './popups.js';
-import {exportRecording,validateRecording,timingCandidates,missionTiming} from './core.js';
+import {exportRecording,exportForReview,validateRecording,timingCandidates,missionTiming} from './core.js';
 const $=id=>document.getElementById(id);
 async function request(kind,extra={}){const r=await chrome.runtime.sendMessage({kind,...extra});if(!r.ok)throw Error(r.error);return r.value;}
 let current,reviewOriginal;
@@ -58,15 +58,15 @@ for(const [id,key] of [['timerStart','missionStart'],['timerFinish','completionG
 };
 function reviewImported(r){openReview(exportRecording(validateRecording(r),{notes:r.notes||''}));}
 function openReview(r){$('playbackDiagnostic').textContent='';void request('status').then(({status})=>{if(status.mode==='paused'&&status.name===r.name&&current?.id===r.id)$('playbackDiagnostic').textContent='Paused replay — '+status.message+'\n'+JSON.stringify(r.steps.slice(status.index,status.index+1).map((s,j)=>({step:status.index+j+1,type:s.type,target:s.target,x:s.x,y:s.y,buttons:s.buttons})),null,2);}).catch(()=>{});current=structuredClone(r);reviewOriginal=exportRecording(r,{notes:r.notes||''});$('approveShared').hidden=!r.source;$('save').textContent=r.source?'Save personal copy':'Save';$('replace').hidden=!r.id||!!r.source;$('sharedNotice').hidden=!r.source;$('missionName').value=r.name;$('notes').value=r.notes||'';$('reviewed').checked=false;$('reviewError').textContent='';current.minimumMs=r.minimumMs||180000;$('timingReviewed').checked=!!r.timingReviewed;$('minimumDisplay').textContent=`${Math.floor(current.minimumMs/60000)}:${String((current.minimumMs/1000)%60).padStart(2,'0')}`;drawSteps();drawTiming();$('review').showModal();}
-function edited(){current.name=$('missionName').value.trim();current.notes=$('notes').value;current.minimumMs=current.minimumMs||180000;current.timingReviewed=$('timingReviewed').checked;validateRecording(current);if(current.timingReviewed)missionTiming(current);return current;}
+function edited({checkTiming=true}={}){current.name=$('missionName').value.trim();current.notes=$('notes').value;current.minimumMs=current.minimumMs||180000;current.timingReviewed=$('timingReviewed').checked;validateRecording(current);if(checkTiming&&current.timingReviewed)missionTiming(current);return current;}
 $('close').onclick=()=>$('review').close();
 $('save').onclick=async()=>{try{edited();const result=current.id?await request('save',{recording:current}):await request('import',{recording:current});current.id=result.id;delete current.source;$('approveShared').hidden=true;$('sharedNotice').hidden=true;$('save').textContent='Save';await refresh();$('reviewError').textContent=result.personalCopy?'Personal copy saved. Shared original is unchanged.':'Saved locally.';}catch(e){$('reviewError').textContent=e.message;}};
-function downloadable(){if(!$('reviewed').checked)throw Error('Review the recording and check the review box first.');const ready=edited();missionTiming(ready);return exportRecording(ready,{notes:current.notes});}
+function downloadable({forSharing=false}={}){const ready=edited({checkTiming:forSharing});if(forSharing)missionTiming(ready);return exportForReview(ready,{reviewed:$('reviewed').checked});}
 function download(r,filename){const blob=new Blob([JSON.stringify(r,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=filename||((r.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'mission')+'.json');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 $('export').onclick=()=>{try{download(downloadable());$('reviewError').textContent='Exported. Nothing has been published.';}catch(e){$('reviewError').textContent=e.message;}};
 $('share').onclick=async()=>{try{
   $('share').disabled=true;$('reviewError').textContent='Connecting and publishing…';
-  const result=await request('publishRecording',{recording:downloadable(),reviewed:$('reviewed').checked});
+  const result=await request('publishRecording',{recording:downloadable({forSharing:true}),reviewed:$('reviewed').checked});
   $('reviewError').textContent=result.duplicate?'This recording is already in the shared library.':'Published to GitHub. Everyone receives it on their next sync; GitHub caching may cause a short delay.';
   await refreshPublisher();
 }catch(e){$('reviewError').textContent=e.message;}finally{$('share').disabled=false;}};
