@@ -1,5 +1,3 @@
-import {sameViewport,playbackViewport,centeredPoint,pointInside} from './viewport.js';
-import {waitForMotion,stableAdaptiveTarget,startsMovement,needsWorldSettle} from './adaptive.js';
 import {waitForHoverIdentity} from './hover.js';
 import {waitForScene} from './scene.js';
 import {waitForRadialControl} from './radial.js';
@@ -8,7 +6,7 @@ import {checkForUpdates} from './updates.js';
 import {connectPublisher,publisherStatus,publishRecording} from './publishing.js';
 import {learnOptionalPopups,runOptionalPopup,popupDecision} from './popups.js';
 import {RAW_ROOT,validateCatalog,readBounded,syncShared,sharedReviewed,prepareShare} from './sharing.js';
-import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,continuesWheelGesture} from './core.js';
+import {FORMAT,VERSION,MAX_STEPS,gameURL,sameSpace,checkpointEqual,validateRecording,matchPatch,exportRecording,missionTiming,remainingMissionMs,MINIMUM_MISSION_MS,timingCandidates,recordedPointMatches,sameWheelGesture} from './core.js';
 let progressQueue=Promise.resolve();
 function persistPlayback(){const progress=playbackProgress(session);const write=()=>chrome.storage.local.set({activePlayback:progress});progressQueue=progressQueue.then(write,write);return progressQueue;}
 let lastCaptureAt=0;
@@ -29,7 +27,7 @@ async function notify(){
   const s=snapshot();await persistPlayback();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.mode==='paused'?`Paused · ${s.index}/${s.count} · ${s.message}`:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -72,7 +70,7 @@ async function capture(tabId,viewport){
   for(let i=0;i<gray.length;i++)gray[i]=Math.round(rgba[i*4]*.299+rgba[i*4+1]*.587+rgba[i*4+2]*.114);
   return {width:w,height:h,data:gray,at:capturedAt,scaleX:viewport.width/w,scaleY:viewport.height/h};
 }
-function patchAt(f,x,y,size=64){
+function patchAt(f,x,y,size=32){
   const w=Math.min(size,f.width),h=Math.min(size,f.height),cx=x/f.scaleX,cy=y/f.scaleY,left=Math.max(0,Math.min(f.width-w,Math.round(cx-w/2))),top=Math.max(0,Math.min(f.height-h,Math.round(cy-h/2)));
   const data=[];for(let j=0;j<h;j++)for(let i=0;i<w;i++)data.push(f.data[(top+j)*f.width+left+i]);
   const mean=data.reduce((a,b)=>a+b,0)/data.length;
@@ -80,7 +78,7 @@ function patchAt(f,x,y,size=64){
   return {width:w,height:h,offsetX:cx-left,offsetY:cy-top,data};
 }
 function startFrames(s){
-  frameTimer=setInterval(async()=>{if(captureBusy||session!==s||s.mode!=='recording')return;captureBusy=true;try{frame=await capture(s.tabId,playbackViewport(s));if(s.visualDisconnected){s.visualDisconnected=false;s.message='Recording inputs and visual targets.';await notify();}}catch(e){frame=null;s.visualDisconnected=true;s.message='Inputs are saving, but visual capture failed: '+e.message;await notify();}finally{captureBusy=false;}},650);
+  frameTimer=setInterval(async()=>{if(captureBusy||session!==s||s.mode!=='recording')return;captureBusy=true;try{frame=await capture(s.tabId,s.recording.viewport);if(s.visualDisconnected){s.visualDisconnected=false;s.message='Recording inputs and visual targets.';await notify();}}catch(e){frame=null;s.visualDisconnected=true;s.message='Inputs are saving, but visual capture failed: '+e.message;await notify();}finally{captureBusy=false;}},650);
 }
 async function startRecord(tabId,name){
   if(session)throw Error('Stop the current session first.');
@@ -155,36 +153,15 @@ async function stop(message='Stopped. Recording saved locally.'){
   session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
 }
 function alive(s){if(session!==s||s.cancelled)throw Error('Cancelled');}
-async function inputContext(s){
-  alive(s);
-  const tab=await chrome.tabs.get(s.tabId);alive(s);
-  if(!tab.active)throw Error('Game tab is not active. Return to it, then Resume; playback position is saved.');
-  const p=await probe(s.tabId);alive(s);
-  if(p.visibility==='hidden')throw Error('Game view is hidden. Make it visible, then Resume.');
-  if(s.documentToken&&p.documentToken&&s.documentToken!==p.documentToken){s.reconnect=true;throw Error('Game document reloaded. Saved playback position retained.');}
-  const step=s.recording.steps[s.index];
-  if(!sameSpace(step?.url||s.recording.startURL,tab.url)||!sameSpace(step?.url||s.recording.startURL,p.url))throw Error('Different space. Return to the recorded space, then Retry.');
-  if(!sameViewport(p.viewport,playbackViewport(s)))throw Error('Game view changed during playback. Restore its size, or use Adjust view while paused.');
-  return p;
-}
-async function safeInput(s,method,params){
-  alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');
-  if(s.mode!=='playing')throw Error('Playback paused before sending input. Resume when ready.');
-  await inputContext(s);
-  const previouslyInFlight=!!s.inFlight;s.inFlight=true;await persistPlayback();
-  try{
-    await inputContext(s);
-    if(s.mode!=='playing'||s.reconnect)throw Error('Playback paused or disconnected before sending input.');
-  }catch(error){
-    // No command was dispatched here. Preserve uncertainty only for an earlier
-    // command in this action, rather than forcing task restart after a tab switch.
-    s.inFlight=previouslyInFlight;if(session===s)await persistPlayback();throw error;
-  }
-  await command(s.tabId,method,params);
-}
+async function safeInput(s,method,params){alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');s.inFlight=true;await persistPlayback();alive(s);if(!gameURL((await chrome.tabs.get(s.tabId)).url))throw Error('The tab left SmallVerse.');alive(s);await command(s.tabId,method,params);}
 async function gate(s){
   while(s.mode==='paused'){alive(s);await sleep(100);}alive(s);
-  return inputContext(s);
+  const p=await probe(s.tabId);alive(s);
+  if(s.documentToken&&p.documentToken&&s.documentToken!==p.documentToken){s.reconnect=true;throw Error('Game document reloaded. Saved playback position retained.');}
+  const step=s.recording.steps[s.index];
+  if(!sameSpace(step?.url||s.recording.startURL,p.url))throw Error('Different space. Return to the recorded space, then Retry.');
+  if(p.viewport.width!==s.recording.viewport.width||p.viewport.height!==s.recording.viewport.height)throw Error('Game view changed. Stop and restart replay to restore its size.');
+  return p;
 }
 async function waitCheckpoint(s,expected,timeout=15000){
   if(!expected?.title)return;
@@ -197,30 +174,22 @@ async function waitCheckpoint(s,expected,timeout=15000){
   }
 }
 async function point(s,step){
-  const candidate=s.positionReplay?{x:step.x,y:step.y}:centeredPoint(step,s.recording.viewport,playbackViewport(s));
   if(step.hoverIdentity){
-    if(!pointInside(candidate,playbackViewport(s)))throw Error('The repaired hover position is outside this view.');
     if(s.buttons||s.heldKeys.size)throw Error('Release held inputs before checking the door label.');
-    await waitForHoverIdentity({...step,...candidate},{probe:()=>gate(s),read:()=>page(s.tabId,{kind:'hoverIdentity',identity:step.hoverIdentity}),move:p=>safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',...p,buttons:0}),sleep});alive(s);
-    s.coordinateOnce=false;return candidate;
+    await waitForHoverIdentity(step,{probe:()=>gate(s),read:()=>page(s.tabId,{kind:'hoverIdentity',identity:step.hoverIdentity}),move:p=>safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',...p,buttons:0}),sleep});alive(s);
+    s.coordinateOnce=false;return {x:step.x,y:step.y};
   }
 
   if(step.sceneAnchors){
-    if(!pointInside(candidate,playbackViewport(s)))throw Error('The repaired scene position is outside this view.');
-    const anchors=step.sceneAnchors.map(a=>({...a,...(s.positionReplay?{x:a.x,y:a.y}:centeredPoint(a,s.recording.viewport,playbackViewport(s)))}));
-    await waitForScene({...step,sceneAnchors:anchors},{probe:()=>gate(s),capture:()=>capture(s.tabId,playbackViewport(s)),sleep});alive(s);
-    s.coordinateOnce=false;return candidate;
+    await waitForScene(step,{probe:()=>gate(s),capture:()=>capture(s.tabId,s.recording.viewport),sleep});alive(s);
+    s.coordinateOnce=false;return {x:step.x,y:step.y};
   }
 
   if(step.waitForRadial){
     if(s.index>=s.timing.finish)await waitMinimum(s);
     return waitForRadialControl(step,{probe:()=>gate(s),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep,anchor:s.lastPoint||s.recording.steps.slice(0,s.index).reverse().find(x=>x.type==='pointerup')});
   }
-  if(s.coordinateOnce){s.coordinateOnce=false;if(!sameViewport(s.recording.viewport,playbackViewport(s)))throw Error('Saved-position override requires the original viewport size.');return {x:step.x,y:step.y};}
-  if(!s.positionReplay){
-    if(!step.target&&!step.patch)throw Error('No visual target was saved for this action. Adaptive replay cannot infer a missing target.');
-    return stableAdaptiveTarget(step,{probe:()=>gate(s),capture:()=>capture(s.tabId,playbackViewport(s)),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep});
-  }
+  if(s.coordinateOnce){s.coordinateOnce=false;return {x:step.x,y:step.y};}
   if(s.positionReplay){
     if(step.target){
       const result=await page(s.tabId,{kind:'verifyPoint',target:step.target,x:step.x,y:step.y});alive(s);
@@ -230,13 +199,18 @@ async function point(s,step){
     if(!step.patch)throw Error('Alignment cannot be verified: this action has no visual reference. Re-record this mission with visual capture working.');
     for(let attempt=0;attempt<3;attempt++){
       await gate(s);await waitCheckpoint(s,step.checkpoint);
-      const f=await capture(s.tabId,playbackViewport(s));alive(s);
+      const f=await capture(s.tabId,s.recording.viewport);alive(s);
       if(recordedPointMatches(f,step.patch,step.x,step.y))return {x:step.x,y:step.y};
       if(attempt<2)await sleep(180);
     }
     throw Error('Not enough stable detail matches this click after three checks. Replay paused without clicking. Restore the view and retry.');
   }
-
+  if(step.target){const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p)throw Error('The recorded control is missing or covered. Restore the view, then Retry.');return p;}
+  if(!step.patch)throw Error('No visual target was captured. Use the recorded position once only if the view matches.');
+  const f=await capture(s.tabId,s.recording.viewport);alive(s);
+  const match=matchPatch(f,step.patch);
+  if(!match)throw Error('Visual target is missing, changed, or ambiguous. Restore the view and Retry, or use the recorded position once.');
+  return {x:match.x*f.scaleX,y:match.y*f.scaleY};
 }
 async function execute(s,step){
   if(step.type==='optionalPopup'){
@@ -262,32 +236,22 @@ async function execute(s,step){
   }
 
   if(step.type==='checkpoint'){await waitCheckpoint(s,step.checkpoint,30000);return;}
-  if(!s.positionReplay&&s.needsSettle&&needsWorldSettle(step)&&!s.buttons&&!s.heldKeys.size&&['pointerdown','text','keydown','wheel'].includes(step.type)&&!(step.type==='wheel'&&continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index))){
-    s.message='Waiting for walking and camera motion to settle…';await notify();
-    await waitForMotion({probe:()=>gate(s),capture:()=>capture(s.tabId,playbackViewport(s)),sleep});alive(s);
-    s.needsSettle=false;s.message='Scene settled; checking the next target.';
-  }
-
   if(['pointerdown','text','keydown','wheel'].includes(step.type))await waitCheckpoint(s,step.checkpoint);
   await gate(s);
   if(step.type==='pointerdown'){
-    const p=await point(s,step);alive(s);if(!pointInside(p,playbackViewport(s)))throw Error('Target is outside the current game view.');s.delta={x:p.x-step.x,y:p.y-step.y};s.lastPoint=p;s.lastButton=step.button;s.gestureStart=s.index;s.movementGesture=startsMovement(step);
+    const p=await point(s,step);alive(s);s.delta={x:p.x-step.x,y:p.y-step.y};s.lastPoint=p;s.lastButton=step.button;s.gestureStart=s.index;
     await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x,y:p.y,buttons:0});
     await safeInput(s,'Input.dispatchMouseEvent',{type:'mousePressed',x:p.x,y:p.y,button:step.button,buttons:step.buttons,modifiers:step.modifiers||0,clickCount:step.clickCount||1});s.buttons=step.buttons;
   }else if(step.type==='pointerup'||step.type==='pointermove'){
     const x=step.x+(s.delta?.x||0),y=step.y+(s.delta?.y||0);
-    if(!pointInside({x,y},playbackViewport(s)))throw Error('Recorded drag extends outside this game view.');
     if(step.type==='pointerup'&&s.buttons&&(s.lastPoint?.x!==x||s.lastPoint?.y!==y))await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:s.lastButton,buttons:s.buttons,modifiers:step.modifiers||0});
     s.lastPoint={x,y};
     await safeInput(s,'Input.dispatchMouseEvent',{type:step.type==='pointerup'?'mouseReleased':'mouseMoved',x,y,button:step.type==='pointerup'?step.button:(s.buttons?s.lastButton:'none'),buttons:step.buttons,modifiers:step.modifiers||0,...(step.type==='pointerup'?{clickCount:step.clickCount||1}:{})});s.buttons=step.buttons;
-    if(step.type==='pointerup'&&s.movementGesture){s.needsSettle=true;s.movementGesture=false;}
   }else if(step.type==='wheel'){
     // Validate the start of a continuous wheel gesture, not intermediate camera frames.
     // Every following click and each new wheel gesture still checks alignment.
-    if(!continuesWheelGesture(s.recording.steps,s.wheelIndex,s.index)){s.wheelPoint=await point(s,step);s.wheelOrigin={x:step.x,y:step.y};}
-    const wheelPoint={x:s.wheelPoint.x+step.x-s.wheelOrigin.x,y:s.wheelPoint.y+step.y-s.wheelOrigin.y};
-    if(!pointInside(wheelPoint,playbackViewport(s)))throw Error('Scroll position is outside the current game view.');
-    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',...wheelPoint,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});s.wheelIndex=s.index;s.needsSettle=true;
+    if(s.wheelIndex!==s.index-1||!sameWheelGesture(s.recording.steps[s.index-1],step))await point(s,step);
+    await safeInput(s,'Input.dispatchMouseEvent',{type:'mouseWheel',x:step.x,y:step.y,deltaX:step.deltaX,deltaY:step.deltaY,modifiers:step.modifiers||0});s.wheelIndex=s.index;
   }else if(step.type==='text'){
     const p=await page(s.tabId,{kind:'resolve',target:step.target});if(!p?.editable)throw Error('The recorded text field is not available.');
     const selected=await page(s.tabId,{kind:'selectText',target:step.target});if(!selected?.ok)throw Error('Could not focus the recorded text field.');
@@ -337,7 +301,7 @@ async function run(s){
   }
   if(session===s)await stop('Replay reached the end of the recording. Check the game for mission completion.');
 }
-async function play(tabId,id,positionReplay=false){
+async function play(tabId,id,positionReplay=true){
   if(session)throw Error('Stop the current session first.');
   const r=(await library())[id];validateRecording(r);
   if(r.source?.retired)throw Error('This mission was removed from the shared catalog. Review it and save a personal copy to use it.');
@@ -345,9 +309,9 @@ async function play(tabId,id,positionReplay=false){
   if(!sharedReviewed(r,reviews))throw Error('Review this shared version in the library before replay.');
   const timing=missionTiming(r);
   const tab=await ensureGame(tabId);if(!sameSpace(tab.url,r.startURL))throw Error('Open the recording’s starting space before replay.');
-  const observed=await attach(tabId,positionReplay===true?r.viewport:null);
+  const observed=await attach(tabId,r.viewport);
   await chrome.storage.local.set({playbackRecording:r});
-  session={playbackViewport:observed.viewport,documentToken:observed.documentToken,mode:'playing',positionReplay:positionReplay===true,tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
+  session={documentToken:observed.documentToken,mode:'playing',positionReplay:positionReplay===true,tabId,recording:r,index:0,timing,missionStarted:null,message:'Replaying. Escape or Alt+Shift+S stops.',heldKeys:new Map(),buttons:0};await notify();void run(session);return snapshot();
 }
 async function pause(tabId){
   if(!session||session.mode==='recording')throw Error('Pause is available during replay. Stop saves a recording.');
@@ -356,10 +320,10 @@ async function pause(tabId){
     if(session.reconnect){
       const target=tabId||session.tabId,observed=await probe(target),expected=expectedCheckpoint(session.recording,session.index);
       if(!sameSpace(observed.url,session.recording.startURL)||expected&&!checkpointEqual(expected,observed.checkpoint))throw Error('Current objective differs from the saved position. Restore it, or use Resume at objective.');
-      try{await command(target,'Page.enable');}catch{await attach(target,session.positionReplay?session.recording.viewport:null);}
+      try{await command(target,'Page.enable');}catch{await attach(target,session.recording.viewport);}
       const verified=await probe(target);
       if(!sameSpace(verified.url,session.recording.startURL)||expected&&!checkpointEqual(expected,verified.checkpoint))throw Error('Objective changed while reconnecting. Playback remains paused.');
-      if(!sameViewport(verified.viewport,playbackViewport(session)))throw Error('Restore this playback session’s window size, or resume from an objective in adaptive mode.');
+      if(verified.viewport.width!==session.recording.viewport.width||verified.viewport.height!==session.recording.viewport.height)throw Error('Restore the recorded window size before resuming.');
       session.tabId=target;session.documentToken=verified.documentToken;session.reconnect=false;
     }
     session.wheelIndex=null;session.mode='playing';session.message='Replaying.';
@@ -367,80 +331,11 @@ async function pause(tabId){
   else{session.mode='paused';session.message='Paused. Resume when ready.';}
   await notify();if(session.mode==='playing'&&!session.runActive)void run(session);return snapshot();
 }
-function nextViewStep(recording,index,checkpoint){
-
-  for(let i=index;i<recording.steps.length;i++){
-    const candidate=recording.steps[i];
-    if(candidate.checkpoint?.title&&!checkpointEqual(candidate.checkpoint,checkpoint))break;
-    if(['pointerdown','wheel','text','keydown'].includes(candidate.type))return candidate;
-    if(!['checkpoint'].includes(candidate.type))break;
-  }
-  return null;
-}
-async function checkPausedView(s){
-  if(s.restartRequired||s.buttons||s.heldKeys.size)throw Error('An input was interrupted. Select the current task before resuming.');
-  if(s.reconnect)throw Error('Playback disconnected. Use the task picker to reconnect at the current objective.');
-  const index=s.index,expected=expectedCheckpoint(s.recording,index);
-  const read=async()=>{
-    if(session!==s||s.mode!=='paused'||s.index!==index)throw Error('Playback state changed. Check the view again.');
-    const p=await probe(s.tabId);
-    if(s.documentToken&&p.documentToken!==s.documentToken)throw Error('The game reloaded. Select the current task.');
-    if(!sameSpace(s.recording.startURL,p.url)||expected&&!checkpointEqual(expected,p.checkpoint))throw Error('The current objective differs. Select the matching task first.');
-    return p;
-  };
-  const state=await read(),viewport=state.viewport;
-  const probeView=async()=>{const p=await read();if(!sameViewport(p.viewport,viewport))throw Error('View resized during the check. Try again.');return p;};
-  const step=nextViewStep(s.recording,index,state.checkpoint);
-  if(!step)throw Error('No directly checkable target at this position. Select the current task or resume with normal checks.');
-  if(step.hoverIdentity)throw Error(`This hidden target requires a fresh ${step.hoverIdentity.title} hover during replay. Adjust the view, then Resume to run that check.`);
-  if(step.sceneAnchors)throw Error('This repaired target uses fixed landmarks. Restore the saved view before resuming; this check cannot relocate it.');
-  if(!step.target&&!step.patch)throw Error('No visual reference was saved for this action. The view cannot be verified automatically.');
-  const found=await stableAdaptiveTarget(step,{probe:probeView,capture:()=>capture(s.tabId,viewport),resolve:target=>page(s.tabId,{kind:'resolve',target}),sleep});
-  await probeView();
-  if(!pointInside(found,viewport))throw Error('The target is outside the current game view.');
-  // No inputs, timer changes or step advancement. Replay always checks again.
-  s.positionReplay=false;s.playbackViewport=viewport;s.coordinateOnce=false;s.needsSettle=true;s.wheelIndex=null;
-  s.message='Target found in the current view. Adaptive playback enabled. Resume will check again before acting.';
-  await notify();return {message:s.message,point:found};
-}
-async function resumeAtObjective(m,r){
-    if(session&&session.mode!=='paused')throw Error('Pause or stop playback before choosing an objective.');
-    validateRecording(r);const timing=missionTiming(r);
-    if(r.source?.retired||!sharedReviewed(r,(await chrome.storage.local.get('sharedReviews')).sharedReviews||{}))throw Error('Review the shared recording first.');
-    const observed=await probe(m.tabId);if(!sameSpace(observed.url,r.startURL))throw Error('Open the recording’s space.');
-    verifyRecoveryObjective(r,m.index,observed.checkpoint);
-    if(session)await stop('Changing playback recovery point.');
-    const verified=await attach(m.tabId,m.positionReplay===true?r.viewport:null);try{verifyRecoveryObjective(r,m.index,verified.checkpoint);}catch(error){await detach(m.tabId);throw error;}
-    await chrome.storage.local.set({playbackRecording:r});
-    session={playbackViewport:verified.viewport,tabId:m.tabId,recording:r,index:m.index,timing,positionReplay:m.positionReplay===true,documentToken:verified.documentToken,missionStarted:performance.now(),mode:'playing',heldKeys:new Map(),buttons:0,message:'Resuming from the verified objective. A fresh three-minute minimum starts now.'};
-    await notify();void run(session);return snapshot();
-}
 async function handle(m,sender){
   if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
-  let extensionControl=false;
-  try{
-    const source=new URL(sender.url),base=new URL(chrome.runtime.getURL('popup.html'));
-    extensionControl=source.protocol===base.protocol&&source.host===base.host&&['/popup.html','/library.html'].includes(source.pathname);
-  }catch{}
+  const extensionControl=sender.url&&['popup.html','library.html'].some(path=>sender.url===chrome.runtime.getURL(path));
   const fromPage=!!sender.tab&&!extensionControl;
-  if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart','overlayPause','overlayTasks','overlayResumeTask','overlayCheckView'].includes(m.kind))throw Error('This command is only available in the extension controls.');
-  if(m.kind.startsWith('overlay')){
-    if(!fromPage||!gameURL(sender.url||sender.tab?.url)||!session||sender.tab.id!==session.tabId||session.mode==='recording')throw Error('Overlay controls require the active playback game tab.');
-    if(m.kind==='overlayPause')return pause(session.tabId);
-    if(session.mode!=='paused')throw Error('Pause playback before adjusting the view or choosing a task.');
-    const s=session;
-    if(m.kind==='overlayTasks'){
-      const observed=await probe(s.tabId),tasks=recoveryObjectives(s.recording);
-      const matches=sameSpace(observed.url,s.recording.startURL)?tasks.filter(t=>checkpointEqual(t.checkpoint,observed.checkpoint)):[];
-      const next=nextViewStep(s.recording,s.index,observed.checkpoint);
-      return {tasks,currentIndex:matches.length===1?matches[0].index:null,matches:matches.length,reference:next?.patch||null,target:next?.hoverIdentity?.title||next?.target?.aria||next?.target?.title||next?.target?.text||'',viewport:s.recording.viewport};
-    }
-    if(m.kind==='overlayResumeTask'){
-      if(m.confirmed!==true)throw Error('Confirm the selected task before resuming.');
-      return resumeAtObjective({tabId:s.tabId,index:m.index,positionReplay:false},s.recording);
-    }
-    if(m.kind==='overlayCheckView')return checkPausedView(s);
-  }
+  if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart'].includes(m.kind))throw Error('This command is only available in the extension controls.');
   if(fromPage&&session&&sender.tab.id!==session.tabId)return {ok:false};
   if(m.kind==='markFinalTask'){
     if(session?.mode!=='recording')throw Error('Start recording first.');
@@ -482,7 +377,7 @@ async function handle(m,sender){
   if(m.kind==='start')return startRecord(m.tabId,m.name);
   if(m.kind==='resumeRecording')return resumeRecord(m.tabId,m.id);
   if(m.kind==='play')return play(m.tabId,m.id,m.positionReplay);
-  if(m.kind==='captureCheck'){const own=!session,tabId=session?.tabId||m.tabId,viewport=(session?playbackViewport(session):null)||(await attach(tabId,null)).viewport;try{let f;for(let i=0;i<3;i++)f=await capture(tabId,viewport);return {message:`Three visual captures passed at ${viewport.width}×${viewport.height}; no viewport resizing used.`};}finally{if(own)await detach(tabId);}}
+  if(m.kind==='captureCheck'){const own=!session,tabId=session?.tabId||m.tabId,viewport=session?.recording.viewport||(await attach(tabId,null)).viewport;try{let f;for(let i=0;i<3;i++)f=await capture(tabId,viewport);return {message:`Three visual captures passed at ${viewport.width}×${viewport.height}; no viewport resizing used.`};}finally{if(own)await detach(tabId);}}
   if(m.kind==='stop'){if(session?.mode==='recording'){await page(session.tabId,{kind:'flush'}).catch(()=>{});await serial;}return stop('Stopped. Saved recordings are in your library.');}
   if(m.kind==='pause')return pause(m.tabId);
   if(m.kind==='coordinates'){
@@ -490,7 +385,18 @@ async function handle(m,sender){
     session.coordinateOnce=true;return pause();
   }
   if(m.kind==='recoveryObjectives'){const r=(await library())[m.id];return recoveryObjectives(r);}
-  if(m.kind==='resumeObjective')return resumeAtObjective(m,(await library())[m.id]);
+  if(m.kind==='resumeObjective'){
+    if(session&&session.mode!=='paused')throw Error('Pause or stop playback before choosing an objective.');
+    const r=(await library())[m.id];validateRecording(r);const timing=missionTiming(r);
+    if(r.source?.retired||!sharedReviewed(r,(await chrome.storage.local.get('sharedReviews')).sharedReviews||{}))throw Error('Review the shared recording first.');
+    const observed=await probe(m.tabId);if(!sameSpace(observed.url,r.startURL))throw Error('Open the recording’s space.');
+    verifyRecoveryObjective(r,m.index,observed.checkpoint);
+    if(session)await stop('Changing playback recovery point.');
+    const verified=await attach(m.tabId,r.viewport);try{verifyRecoveryObjective(r,m.index,verified.checkpoint);}catch(error){await detach(m.tabId);throw error;}
+    await chrome.storage.local.set({playbackRecording:r});
+    session={tabId:m.tabId,recording:r,index:m.index,timing,positionReplay:m.positionReplay!==false,documentToken:verified.documentToken,missionStarted:performance.now(),mode:'playing',heldKeys:new Map(),buttons:0,message:'Resuming from the verified objective. A fresh three-minute minimum starts now.'};
+    await notify();void run(session);return snapshot();
+  }
   if(m.kind==='get')return (await library())[m.id];
   if(m.kind==='save'){
     const original=(await library())[m.recording.id];
@@ -532,7 +438,7 @@ const recoveredRecording=(async()=>{
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   const action=async()=>{await recoveredRecording;return handle(m,sender);};
   // Serialize lifecycle/library mutations, but not content events or read-only status queries.
-  const p=['start','resumeRecording','play','resumeObjective','overlayResumeTask','overlayPause','overlayCheckView','pause','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
+  const p=['start','resumeRecording','play','resumeObjective','pause','stop','save','delete','import','approveShared'].includes(m.kind)?(lifecycle=lifecycle.then(action,action)):action();
   Promise.resolve(p).then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
 });
 chrome.commands.onCommand.addListener(name=>{void recoveredRecording.then(()=>name==='stop'?handle({kind:'stop'},{}):name==='pause'?pause():null).catch(()=>{});});

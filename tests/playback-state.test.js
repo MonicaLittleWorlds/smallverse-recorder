@@ -25,11 +25,3 @@ test('objective recovery uses complete matching text and excludes finishing acti
  assert.throws(()=>verifyRecoveryObjective(r,2,{title:'[7]',text:'Already completed'}));
  assert.throws(()=>verifyRecoveryObjective(r,3,later));
 });
-
-test('recovery retains the actual adaptive viewport and supports older saved sessions',()=>{
- const s={mode:'playing',recording:r,tabId:7,index:3,missionStarted:null,heldKeys:new Map(),buttons:0,positionReplay:false,playbackViewport:{width:1470,height:956}};
- const saved=playbackProgress(s),restored=restorePlayback(saved,r);
- assert.deepEqual(restored.playbackViewport,{width:1470,height:956});
- delete saved.playbackViewport;
- assert.deepEqual(restorePlayback(saved,r).playbackViewport,r.viewport);
-});

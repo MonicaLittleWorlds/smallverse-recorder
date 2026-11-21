@@ -80,7 +80,7 @@ test('fixed-position matching accepts faint detail but rejects flat or shifted p
   assert(!recordedPointMatches({...f,data:Array(1024).fill(85)},p,16,16));
   const a={type:'wheel',at:100,x:50,y:50,modifiers:2};
   assert(sameWheelGesture(a,{...a,at:140}));
-  for(const change of [{at:500},{x:120},{modifiers:0},{type:'pointerdown'}])assert(!sameWheelGesture(a,{...a,...change}));
+  for(const change of [{at:500},{x:80},{modifiers:0},{type:'pointerdown'}])assert(!sameWheelGesture(a,{...a,...change}));
 });
 
 test('partial visual check tolerates local occlusion but rejects wrong alignment and insufficient evidence',async()=>{
@@ -113,13 +113,4 @@ test('radial wait survives export and cannot be attached to arbitrary canvas cli
  const r=recording();r.steps=[{type:'pointerdown',at:0,x:100,y:100,button:'left',buttons:1,target:{tag:'button',text:'*'},waitForRadial:true}];
  assert.equal(exportRecording(r).steps[0].waitForRadial,true);
  r.steps[0].target=null;assert.throws(()=>validateRecording(r),/radial/);
-});
-
-test('wheel grouping crosses only matching observations and preserves gesture boundaries',async()=>{
- const {continuesWheelGesture}=await import('../extension/core.js');
- const checkpoint={title:'Task',text:'Zoom'},w={type:'wheel',at:0,x:100,y:100,modifiers:2,checkpoint};
- assert(continuesWheelGesture([w,{type:'checkpoint',at:10,checkpoint},{...w,at:20,x:115}],0,2));
- for(const mid of [{type:'pointerdown'}, {type:'checkpoint',checkpoint:{title:'Next',text:'Go'}}])assert(!continuesWheelGesture([w,mid,{...w,at:20}],0,2));
- for(const change of [{at:300},{modifiers:0},{x:200},{checkpoint:{title:'Next',text:'Go'}}])assert(!continuesWheelGesture([w,{...w,at:20,...change}],0,1));
- assert(!continuesWheelGesture([w,w],null,1));
 });

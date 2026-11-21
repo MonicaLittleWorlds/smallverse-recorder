@@ -88,7 +88,7 @@ export function exportRecording(recording, {name=recording.name, notes='', omitT
   validateRecording(out); return out;
 }
 // Match a small grayscale target, rejecting low detail and ambiguous repeated patterns.
-export function matchPatch(frame, patch, {threshold=17, margin=3,includeAlternative=false}={}) {
+export function matchPatch(frame, patch, {threshold=17, margin=3}={}) {
   const {width:w,height:h,data}=frame, pw=patch.width, ph=patch.height;
   if(w<pw || h<ph) return null;
   const avg=patch.data.reduce((a,b)=>a+b,0)/patch.data.length;
@@ -112,8 +112,8 @@ export function matchPatch(frame, patch, {threshold=17, margin=3,includeAlternat
   refined.sort((a,b)=>a.score-b.score);
   const best=refined[0]; if(!best || best.score>threshold)return null;
   const alternative=refined.find(c=>Math.hypot(c.x-best.x,c.y-best.y)>Math.max(pw,ph)*0.65);
-  if(!includeAlternative&&alternative && alternative.score-best.score<margin)return null;
-  return {x:best.x+patch.offsetX,y:best.y+patch.offsetY,score:best.score,...(includeAlternative&&alternative?{alternative:{x:alternative.x+patch.offsetX,y:alternative.y+patch.offsetY,score:alternative.score}}:{})};
+  if(alternative && alternative.score-best.score<margin)return null;
+  return {x:best.x+patch.offsetX,y:best.y+patch.offsetY,score:best.score};
 }
 
 // Markers live on steps, so removing a step cannot silently shift the safety boundary.
@@ -167,7 +167,7 @@ function wholePointMatches(frame,patch,x,y){
 
 export function sameWheelGesture(previous,step){
   return previous?.type==='wheel'&&step.type==='wheel'&&step.at>=previous.at&&step.at-previous.at<=180&&
-    (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=64;
+    (step.modifiers||0)===(previous.modifiers||0)&&Math.hypot(step.x-previous.x,step.y-previous.y)<=4;
 }
 
 // Partial occlusion check: require multiple detailed regions at the original position.
@@ -202,12 +202,4 @@ export function recordedPointMatches(frame,patch,x,y){
     if(stable.every(t=>matches(t,dx,dy)))return false;
   }
   return true;
-}
-
-// Objective observations can arrive between wheel samples without ending a gesture.
-export function continuesWheelGesture(steps,previousIndex,index){
-  if(!Number.isInteger(previousIndex)||previousIndex<0||previousIndex>=index)return false;
-  const previous=steps[previousIndex],step=steps[index];
-  if(!sameWheelGesture(previous,step)||!checkpointEqual(previous.checkpoint,step.checkpoint))return false;
-  return steps.slice(previousIndex+1,index).every(s=>s.type==='checkpoint'&&checkpointEqual(previous.checkpoint,s.checkpoint));
 }

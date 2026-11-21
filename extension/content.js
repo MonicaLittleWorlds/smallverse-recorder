@@ -2,25 +2,12 @@
   if (globalThis.__svRecorder) return;
   globalThis.__svRecorder = true;
   const documentToken=crypto.randomUUID();
-  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart,playbackTools,pauseButton,taskButton,viewButton,recoveryPanel,targetMarker;
+  let mode='idle', started=0, pendingText=null, textTimer, lastMove=0, lastCheckpoint='', observerTimer=null, lastClick=null, overlay, status,markFinal,markStart;
   const norm=s=>String(s??'').replace(/\s+/g,' ').trim();
   const sensitive=e=>e?.closest?.('input[type="password"],input[autocomplete*="password"],input[autocomplete^="cc-"],[data-private]');
   const own=e=>e?.closest?.('#sv-recorder-overlay');
   const editable=e=>e?.matches?.('input,textarea,[contenteditable="true"]');
   const visible=e=>!!e?.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
-  function motionView(){
-    const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
-    const canvases=[...document.querySelectorAll('canvas')].filter(visible).map(rect).sort((a,b)=>b.width*b.height-a.width*a.height);
-    const region=canvases[0]||{x:0,y:innerHeight*.06,width:innerWidth,height:innerHeight*.8};
-    const exclude=[...document.querySelectorAll('[role="dialog"],dialog,[role="toolbar"],[aria-label="Game header"],#sv-recorder-overlay')].filter(visible).map(rect);
-    for(const input of document.querySelectorAll('input,textarea')){
-      if(!visible(input))continue;
-      let box=input;
-      for(let p=input.parentElement;p;p=p.parentElement){const r=rect(p);if(r.width>innerWidth*.45||r.height>innerHeight*.9)break;box=p;}
-      exclude.push(rect(box));
-    }
-    return {region,exclude};
-  }
   function visibleDialogs(){return [...document.querySelectorAll('[role="dialog"],dialog')].filter(visible);}
   function dialogCheckpoint(dialog){
     return {title:norm(dialog.querySelector('h1,h2,h3,[role="heading"]')?.textContent).slice(0,500),text:[...dialog.querySelectorAll('p')].map(p=>norm(p.textContent)).filter(Boolean).join('\n').slice(0,4000)};
@@ -55,22 +42,10 @@
     return els.length===1 ? els[0]:null;
   }
   const mods=e=>(e.altKey?1:0)|(e.ctrlKey?2:0)|(e.metaKey?4:0)|(e.shiftKey?8:0);
-  let invalidated=false,heartbeat;
-  function disconnect(){
-    if(invalidated)return;invalidated=true;mode='idle';pendingText=null;
-    clearTimeout(textTimer);clearTimeout(observerTimer);clearInterval(heartbeat);observer.disconnect();
-    if(!overlay)makeOverlay();overlay.hidden=false;
-    status.textContent='Recorder updated or disconnected. Refresh this game tab before recording or replay.';
-    for(const button of overlay.querySelectorAll('button'))button.hidden=true;
-  }
-  async function send(data){
-    if(invalidated)return;
-    try{return await chrome.runtime.sendMessage(data);}
-    catch(error){if(/extension context invalidated/i.test(String(error?.message||error)))disconnect();}
-  }
+  const send=data=>chrome.runtime.sendMessage(data).catch(()=>{});
   function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
-  function setMode(next){if(invalidated)return;if(next!==mode&&targetMarker)targetMarker.hidden=true;mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';playbackTools.hidden=!['playing','paused'].includes(mode);pauseButton.textContent=mode==='paused'?'Resume':'Pause';taskButton.disabled=viewButton.disabled=mode!=='paused';if(mode!=='paused')recoveryPanel.hidden=true;}
+  function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
   function makeOverlay(){
     overlay=document.createElement('div');overlay.id='sv-recorder-overlay';
     Object.assign(overlay.style,{position:'fixed',top:'48px',left:'10px',zIndex:'2147483647',background:'#f6f6f2',color:'#282b26',border:'1px solid #b6bcb0',borderRadius:'4px',padding:'8px',font:'12px system-ui',maxWidth:'290px'});
@@ -78,64 +53,9 @@
     const stop=document.createElement('button');stop.textContent='Stop';stop.style.marginLeft='10px';stop.onclick=()=>send({kind:'stop'});overlay.append(stop);
     markStart=document.createElement('button');markStart.textContent='Mission accepted';markStart.title='Press after accepting, when the first active objective is visible';markStart.onclick=()=>{flushText();send({kind:'markMissionStart'});};overlay.append(markStart);
     markFinal=document.createElement('button');markFinal.textContent='Final task starts here';markFinal.title='Press BEFORE the first action of the final task, not after mission completion';markFinal.onclick=()=>{flushText();send({kind:'markFinalTask'});};overlay.append(markFinal);
-    makePlaybackTools();document.documentElement.append(overlay);
-  }
-  let markerTimer;
-  function showTargetMarker(point){
-    if(!targetMarker){
-      targetMarker=document.createElement('div');
-      Object.assign(targetMarker.style,{position:'fixed',width:'26px',height:'26px',border:'3px solid #22c55e',borderRadius:'50%',transform:'translate(-50%, -50%)',pointerEvents:'none',zIndex:'2147483647',boxShadow:'0 0 0 2px #17271c'});
-      const label=document.createElement('span');label.textContent='Next target found';Object.assign(label.style,{position:'absolute',top:'30px',left:'0',whiteSpace:'nowrap',background:'#17271c',color:'#fff',padding:'3px 5px',font:'12px system-ui'});targetMarker.append(label);overlay.append(targetMarker);
-    }
-    clearTimeout(markerTimer);targetMarker.style.left=point.x+'px';targetMarker.style.top=point.y+'px';targetMarker.hidden=false;
-    markerTimer=setTimeout(()=>{targetMarker.hidden=true;},5000);
-  }
-  async function overlayRequest(kind,args={}){
-    const result=await send({kind,...args});
-    if(!result?.ok)throw Error(result?.error||'Recorder unavailable. Refresh the game after updating.');
-    return result.value;
-  }
-  function makePlaybackTools(){
-    playbackTools=document.createElement('div');playbackTools.hidden=true;overlay.append(playbackTools);
-    recoveryPanel=document.createElement('div');recoveryPanel.hidden=true;
-    Object.assign(recoveryPanel.style,{marginTop:'8px',maxHeight:'340px',overflowY:'auto'});overlay.append(recoveryPanel);
-    const button=(label,action,parent=playbackTools)=>{
-      const b=document.createElement('button');b.textContent=label;b.style.margin='5px 4px 0 0';
-      b.onclick=async()=>{b.disabled=true;try{await action();}catch(e){status.textContent=e.message;}finally{b.disabled=false;}};
-      parent.append(b);return b;
-    };
-    pauseButton=button('Pause',()=>overlayRequest('overlayPause'));
-    const openPanel=async view=>{
-      if(targetMarker)targetMarker.hidden=true;const data=await overlayRequest('overlayTasks');recoveryPanel.replaceChildren();recoveryPanel.hidden=false;
-      const note=document.createElement('p');note.style.margin='4px 0';recoveryPanel.append(note);
-      if(view){
-        note.textContent='Playback stays paused. Pan or zoom the game toward the saved target, then check. The check finds the target without clicking or moving your camera.';
-        const label=document.createElement('div');label.textContent=data.target||'Saved target reference';recoveryPanel.append(label);
-        if(data.reference){
-          const p=data.reference,c=document.createElement('canvas');c.width=p.width;c.height=p.height;c.style.width='128px';c.style.height='128px';c.style.imageRendering='pixelated';
-          const ctx=c.getContext('2d'),pixels=ctx.createImageData(p.width,p.height);
-          p.data.forEach((v,i)=>{pixels.data.set([v,v,v,255],i*4);});ctx.putImageData(pixels,0,0);
-          ctx.strokeStyle='#ff4545';ctx.beginPath();ctx.moveTo(p.offsetX-4,p.offsetY);ctx.lineTo(p.offsetX+4,p.offsetY);ctx.moveTo(p.offsetX,p.offsetY-4);ctx.lineTo(p.offsetX,p.offsetY+4);ctx.stroke();recoveryPanel.append(c);
-        }
-        const feedback=document.createElement('p');feedback.textContent='Saved viewport: '+data.viewport.width+' × '+data.viewport.height+'. Adaptive replay can use another size.';recoveryPanel.append(feedback);
-        button('Adapt & check view',async()=>{if(targetMarker)targetMarker.hidden=true;feedback.textContent='Checking the current target…';try{const result=await overlayRequest('overlayCheckView');feedback.textContent=result.message;showTargetMarker(result.point);}catch(e){feedback.textContent=e.message;throw e;}},recoveryPanel);
-      }else{
-        note.textContent='Choose the task currently open in the game. This changes the recorder position, not game progress. Already completed actions may repeat.';
-        const search=document.createElement('input');search.type='search';search.placeholder='Search recorded tasks';search.style.width='100%';recoveryPanel.append(search);
-        const select=document.createElement('select');select.size=5;select.style.width='100%';recoveryPanel.append(select);
-        const render=()=>{select.replaceChildren();for(const t of data.tasks){const label=t.checkpoint.title+' — '+t.checkpoint.text;if(!label.toLowerCase().includes(search.value.toLowerCase()))continue;const option=document.createElement('option');option.value=String(t.index);option.textContent=label;select.append(option);}if(data.currentIndex!==null)select.value=String(data.currentIndex);};search.value='';search.oninput=render;render();
-        const resume=async index=>{if(index===null||index===''||!Number.isInteger(Number(index)))throw Error('Choose a recorded task.');if(!confirm('Resume at this task? Its recorded actions may repeat, including chat. A fresh three-minute minimum starts now.'))return;await overlayRequest('overlayResumeTask',{index:Number(index),confirmed:true});recoveryPanel.hidden=true;};
-        button('Resume selected task',()=>resume(select.value),recoveryPanel);
-        const detected=button('Resume detected task',()=>resume(data.currentIndex),recoveryPanel);detected.disabled=data.currentIndex===null;
-        const detail=document.createElement('p');detail.textContent=data.matches===1?'Current objective matched.':data.matches>1?'More than one saved checkpoint matches. Choose the correct occurrence.':'No exact match. Open the current objective in the game and reopen Tasks.';recoveryPanel.append(detail);
-      }
-      button('Move panel',()=>{const right=overlay.style.right==='10px';overlay.style.left=right?'10px':'auto';overlay.style.right=right?'auto':'10px';},recoveryPanel);
-      button('Close',()=>{recoveryPanel.hidden=true;if(targetMarker)targetMarker.hidden=true;},recoveryPanel);
-    };
-    taskButton=button('Tasks',()=>openPanel(false));viewButton=button('Adjust view',()=>openPanel(true));
+    document.documentElement.append(overlay);
   }
   for(const type of ['pointerdown','pointerup','pointermove'])window.addEventListener(type,e=>{
-    if(e.isTrusted&&targetMarker)targetMarker.hidden=true;
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
     if(type==='pointermove'&&!e.buttons)return; // Preserve every delivered drag sample, including fast pans.
     flushText();
@@ -152,10 +72,9 @@
     emit({type,clickCount,...(waitForRadial?{waitForRadial:true}:{}),x:e.clientX,y:e.clientY,button:['left','middle','right'][e.button]||'none',buttons:e.buttons,modifiers:mods(e),...(type==='pointerdown'?{target:descriptor,checkpoint:e.target.closest('[role="dialog"],dialog')?dialogCheckpoint(e.target.closest('[role="dialog"],dialog')):checkpoint()}:{})});
   },true);
   window.addEventListener('wheel',e=>{
-    if(e.isTrusted&&targetMarker)targetMarker.hidden=true;
     if(mode!=='recording'||!e.isTrusted||own(e.target)||sensitive(e.target))return;
-    flushText();const unitX=e.deltaMode===1?16:e.deltaMode===2?innerWidth:1,unitY=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
-    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unitX,deltaY:e.deltaY*unitY,modifiers:mods(e),target:target(e.target),checkpoint:checkpoint()});
+    flushText();const unit=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1;
+    emit({type:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX*unit,deltaY:e.deltaY*unit,modifiers:mods(e),checkpoint:checkpoint()});
   },{capture:true,passive:true});
   document.addEventListener('input',e=>{
     if(mode!=='recording'||!e.isTrusted||sensitive(e.target)||own(e.target)||!editable(e.target))return;
@@ -169,18 +88,16 @@
     if(editable(e.target)&&!['Enter','Tab','Escape'].includes(e.key))return; // input events capture final field value, including paste/IME.
     flushText();emit({type,key:e.key,code:e.code,keyCode:e.keyCode,repeat:e.repeat,modifiers:mods(e),target:target(e.target),checkpoint:type==='keydown'?checkpoint():undefined});
   },true);
-  const observer=new MutationObserver(()=>{
+  new MutationObserver(()=>{
     if(mode!=='recording')return;
     if(observerTimer)return;observerTimer=setTimeout(()=>{
       observerTimer=null;
       const cp=checkpoint(),key=JSON.stringify({cp,dialogs:visibleDialogs().map(dialogCheckpoint)});
       if(key!==lastCheckpoint){flushText();lastCheckpoint=key;emit({type:'checkpoint',checkpoint:cp});}
     },160);
-  });
-  observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
+  }).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
   chrome.runtime.onMessage.addListener((m,_sender,reply)=>{
-    if(invalidated){reply({ok:false,error:'Refresh this game tab after updating the recorder.'});return;}
-    if(m.kind==='probe')reply({visibility:document.visibilityState,motionView:motionView(),documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
+    if(m.kind==='probe')reply({documentToken,url:location.href,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},checkpoint:checkpoint(),dialogs:visibleDialogs().map(d=>{const cp=dialogCheckpoint(d);return cp.title||cp.text?cp:{title:'[Untitled dialog]',text:norm(d.textContent).slice(0,4000)};})});
     else if(m.kind==='mode'){
       if(m.mode==='recording'&&mode!=='recording'){started=m.started;lastCheckpoint=JSON.stringify({cp:checkpoint(),dialogs:visibleDialogs().map(dialogCheckpoint)});}
       if(m.mode!=='recording')flushText();setMode(m.mode);status.textContent=m.label||m.mode;reply({ok:true});
@@ -225,6 +142,6 @@
     }
   });
   // Keep the worker awake during recording, playback and pauses.
-  heartbeat=setInterval(()=>{if(mode!=='idle')send({kind:'contentReady',documentToken});},10000);
+  setInterval(()=>{if(mode!=='idle')send({kind:'contentReady',documentToken});},10000);
   send({kind:'contentReady',documentToken});
 })();
