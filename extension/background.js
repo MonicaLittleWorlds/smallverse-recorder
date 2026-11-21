@@ -1,3 +1,4 @@
+import {startCaptureLoop} from './capture-loop.js';
 import {choosePreActionFrame,captureCoverage} from './capture-history.js';
 import {waitForHoverIdentity} from './hover.js';
 import {waitForScene} from './scene.js';
@@ -15,7 +16,7 @@ let captureQueue=Promise.resolve();
 const ROOT=RAW_ROOT;
 let syncJob=null;
 const SYNC_ALARM='shared-mission-sync';
-let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), frameTimer=null, storeQueue=Promise.resolve();
+let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), stopFrameLoop=null, storeQueue=Promise.resolve();
 let lastStatus={mode:'idle',message:'Ready. Open a SmallVerse space to record.'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const page=(tabId,m)=>chrome.tabs.sendMessage(tabId,m);
@@ -99,8 +100,8 @@ async function recordFrame(s){
  try{return await s.pendingFrame;}finally{s.pendingFrame=null;}
 }
 function startFrames(s){
- clearInterval(frameTimer);
- frameTimer=setInterval(()=>{if(session===s&&s.mode==='recording'&&!s.pendingFrame)void recordFrame(s);},650);
+ stopFrameLoop?.();
+ stopFrameLoop=startCaptureLoop({active:()=>session===s&&s.mode==='recording'&&!s.cancelled,capture:()=>recordFrame(s)});
 }
 async function startRecord(tabId,name){
   if(session)throw Error('Stop the current session first.');
@@ -147,6 +148,7 @@ async function ingest(sender,step,frames,pendingFrame,owner){
       const pending=await Promise.race([pendingFrame,sleep(1500).then(()=>null)]);
       if(pending)chosen=choosePreActionFrame([...frames,pending],actionAt,step.url,step.documentToken);
     }
+    if(chosen.captureMs!==undefined)step.visualCaptureMs=chosen.captureMs;
     if(chosen.frame){step.patch=patchAt(chosen.frame,step.x,step.y);step.visualAgeMs=chosen.age;}
     else{step.visualUnavailable=true;step.visualIssue=s.captureError?'capture-error':chosen.reason;if(chosen.age!==undefined)step.visualAgeMs=chosen.age;}
   }
@@ -170,7 +172,7 @@ async function release(s){
 }
 async function stop(message='Stopped. Recording saved locally.'){
   const s=session;if(!s)return snapshot();
-  clearInterval(frameTimer);frameTimer=null;
+  stopFrameLoop?.();stopFrameLoop=null;
   if(s.mode==='recording')await page(s.tabId,{kind:'flush'}).catch(()=>{});
   // Flush events enter the serial queue; callers must not be on that queue when stopping.
   s.cancelled=true;

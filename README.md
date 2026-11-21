@@ -1,5 +1,9 @@
 # SmallVerse Mission Recorder
 
+## Capture pacing (v0.7.10)
+
+The first diagnostic Loot Drop test saved 26 of 35 click images; nine were rejected as stale, including two world targets without named controls. Capture scheduling now starts the next request after the previous capture completes, eliminating an additional wait for the next 650 ms timer tick. The global 550 ms minimum between screenshot requests remains in force, requests do not overlap, failures back off, and Stop cancels further scheduling. The 1.4-second maximum pre-action frame age is unchanged. Export diagnostics also include screenshot capture duration to distinguish slow captures from frame age in the next live test. This is a pacing correction, not a claim that missing images in existing files were recovered.
+
 ## Exporting short tests (v0.7.9)
 
 Local Export JSON now accepts reviewed partial recordings and capture tests without mission timer markers. Saving first is not required. Invalid timing marked reviewed is downgraded to unreviewed in the exported copy without changing the saved recording. The input-review checkbox and recording-format validation remain required. Playback and Share to GitHub still require valid reviewed mission timing. This allows capture diagnostics to be exported without inventing first-objective or completion markers.

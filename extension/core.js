@@ -54,6 +54,7 @@ export function validateRecording(r) {
       if(Math.max(...a.map(p=>p.y))-Math.min(...a.map(p=>p.y))<50)fail('Scene landmarks need vertical coverage.');
     }
     if(s.visualIssue!==undefined&&!['no-frame','capture-overlapped-action','stale-frame','capture-error'].includes(s.visualIssue))fail('Invalid capture diagnostic.');
+    if(s.visualCaptureMs!==undefined&&(!finite(s.visualCaptureMs)||s.visualCaptureMs<0))fail('Invalid capture duration.');
     if(s.visualAgeMs!==undefined&&(!finite(s.visualAgeMs)||s.visualAgeMs<0))fail('Invalid capture age.');
     if(s.clickCount!==undefined&&![1,2].includes(s.clickCount))fail('Invalid click count.');
     if(s.modifiers!==undefined&&(!Number.isInteger(s.modifiers)||s.modifiers<0||s.modifiers>15))fail('Invalid modifiers.');
@@ -82,7 +83,7 @@ export function validateRecording(r) {
 export function exportRecording(recording, {name=recording.name, notes='', omitText=false}={}) {
   const steps = recording.steps.filter(s => !omitText || s.type !== 'text').map(s => {
     const out={};
-    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','visualIssue','visualAgeMs','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial','sceneAnchors','hoverIdentity']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
+    for(const k of ['type','at','x','y','button','buttons','modifiers','deltaX','deltaY','key','code','keyCode','repeat','value','target','patch','checkpoint','url','visualUnavailable','visualIssue','visualAgeMs','visualCaptureMs','clickCount','missionStart','completionGate','optionalDisabled','popup','next','previous','originalSteps','waitForRadial','sceneAnchors','hoverIdentity']) if(s[k]!==undefined) out[k]=structuredClone(s[k]);
     if(s.originalSteps)out.originalSteps=exportRecording({...recording,steps:s.originalSteps},{omitText}).steps;
     return out;
   });

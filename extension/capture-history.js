@@ -5,8 +5,8 @@ export function choosePreActionFrame(frames,at,url,documentToken,maxAge=1400){
  const before=sameDocument.filter(f=>(f.completedAt??f.at)<=at).sort((a,b)=>b.at-a.at);
  const frame=before[0];
  if(!frame)return {frame:null,reason:sameDocument.length?'capture-overlapped-action':'no-frame'};
- const age=at-frame.at;
- return age>=0&&age<maxAge?{frame,age}:{frame:null,reason:'stale-frame',age};
+ const age=at-frame.at,captureMs=Math.max(0,(frame.completedAt??frame.at)-frame.at);
+ return age>=0&&age<maxAge?{frame,age,captureMs}:{frame:null,reason:'stale-frame',age,captureMs};
 }
 export function captureCoverage(steps){
  let total=0,images=0,unverified=0;
