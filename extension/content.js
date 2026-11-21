@@ -43,7 +43,7 @@
   }
   const mods=e=>(e.altKey?1:0)|(e.ctrlKey?2:0)|(e.metaKey?4:0)|(e.shiftKey?8:0);
   const send=data=>chrome.runtime.sendMessage(data).catch(()=>{});
-  function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
+  function emit(step){if(mode!=='recording')return;send({kind:'event',step:{...step,documentToken,at:step.at??Math.max(0,Date.now()-started),url:location.href}});}
   function flushText(){clearTimeout(textTimer);if(pendingText){emit(pendingText);pendingText=null;}}
   function setMode(next){mode=next; if(!overlay)makeOverlay();overlay.hidden=mode==='idle';markFinal.hidden=markStart.hidden=mode!=='recording';}
   function makeOverlay(){

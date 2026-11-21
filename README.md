@@ -1,5 +1,13 @@
 # SmallVerse Mission Recorder
 
+## Recording image coverage (v0.7.8)
+
+This is a recording-only capture repair; classic playback stays unchanged. A bounded in-memory history of twelve screenshots replaces the single latest-frame slot. Delayed input messages can select their actual pre-action frame instead of losing it when a newer screenshot arrives. If a qualifying capture is still decoding, the recorder waits up to 1.5 seconds for that existing capture. Capture completion must precede the action, frame age remains under 1.4 seconds, and URL/document identity must match. Post-action, stale, or different-document images are never substituted. Full frames are not saved or exported.
+
+Screenshot capture now continues after debugger detachment because captureVisibleTab does not use the debugger connection. Recording status shows saved images/total visual actions, the number of world targets with neither an image nor a named control, and the capture error when present. Stop shows coverage totals. New exported actions retain diagnostic reason codes and frame ages; document tokens remain local. A recovered capture does not retroactively repair missing targets.
+
+Validation uses delayed-event history, overlapping/stale/wrong-document rejection, actual recording attachment, and capture continuing after detachment. The old Loot Drop file cannot establish which missing-image cause occurred at each step. Before another full mission, reload the extension, refresh the game and record a 20–30 second test with several ordinary world clicks and menu interactions. Stop and export it; inspect the image counter and missing-target count. Coverage alone is not proof that every image correctly identifies its object or that a full replay will succeed.
+
 ## Classic playback rollback (v0.7.7)
 
 This release restores the extension and replay tests from commit `61904b9`, the 0.6.14-era implementation immediately before adaptive camera matching and world-motion settling were added. Only the manifest version changes within the restored extension. The higher version number identifies this rollback release and prevents newer releases from being offered as updates to an older version number.

@@ -1,3 +1,4 @@
+import {choosePreActionFrame,captureCoverage} from './capture-history.js';
 import {waitForHoverIdentity} from './hover.js';
 import {waitForScene} from './scene.js';
 import {waitForRadialControl} from './radial.js';
@@ -14,7 +15,7 @@ let captureQueue=Promise.resolve();
 const ROOT=RAW_ROOT;
 let syncJob=null;
 const SYNC_ALARM='shared-mission-sync';
-let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), frameTimer=null, frame=null, captureBusy=false, storeQueue=Promise.resolve();
+let session=null, serial=Promise.resolve(), lifecycle=Promise.resolve(), frameTimer=null, storeQueue=Promise.resolve();
 let lastStatus={mode:'idle',message:'Ready. Open a SmallVerse space to record.'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const page=(tabId,m)=>chrome.tabs.sendMessage(tabId,m);
@@ -22,12 +23,12 @@ const command=(tabId,method,params={})=>chrome.debugger.sendCommand({tabId},meth
 const localLibrary=async()=> (await chrome.storage.local.get('recordings')).recordings||{};
 const library=async()=>({...await localLibrary(),...((await chrome.storage.local.get('sharedRecordings')).sharedRecordings||{})});
 async function put(r){const saved=structuredClone(r);const write=async()=>{const all=await localLibrary();all[saved.id]=saved;await chrome.storage.local.set({recordings:all});};storeQueue=storeQueue.then(write,write);return storeQueue;}
-function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null}:lastStatus;}
+function snapshot(){return session?{mode:session.mode,name:session.recording.name,count:session.recording.steps.length,index:session.index||0,message:session.message||'',tabId:session.tabId,remainingMs:session.waitRemaining??null,...(session.mode==='recording'?{capture:captureCoverage(session.recording.steps),captureError:session.captureError||''}:{})}:lastStatus;}
 async function notify(){
   const s=snapshot();await persistPlayback();await chrome.storage.session.set({status:s,activeRecording:session?.mode==='recording'?{tabId:session.tabId,started:session.started,id:session.recording.id,markFinalPending:!!session.markFinalPending,finalMarkedDuringRecording:!!session.finalMarkedDuringRecording,acceptedFrom:session.acceptedFrom||null,visualDisconnected:!!session.visualDisconnected}:null});
   await chrome.action.setBadgeText({text:s.mode==='recording'?'REC':s.mode==='playing'?'▶':s.mode==='paused'?'Ⅱ':''});
   await chrome.action.setBadgeBackgroundColor({color:s.mode==='recording'?'#b74343':'#246b65'});
-  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count:s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Visual capture lost; inputs still saving':''}`}).catch(()=>{});
+  if(session)page(session.tabId,{kind:'mode',mode:session.mode,started:session.started,label:session.waitRemaining>0?`Waiting · ${Math.ceil(session.waitRemaining/1000)}s until minimum time`:`${s.mode} · ${session.mode==='recording'?s.count+' · images '+s.capture.images+'/'+s.capture.total+(s.capture.unverified?' · '+s.capture.unverified+' missing targets':''):s.index+'/'+s.count}${session.markFinalPending?' · Next action starts final task':''}${session.visualDisconnected?' · Capture error: '+(session.captureError||'unavailable').slice(0,160):''}`}).catch(()=>{});
 }
 async function ensureGame(tabId){const tab=await chrome.tabs.get(tabId);if(!gameURL(tab.url))throw Error('Open a SmallVerse space first.');return tab;}
 async function probe(tabId){try{return await page(tabId,{kind:'probe'});}catch{await chrome.scripting.executeScript({target:{tabId},files:['content.js']});return page(tabId,{kind:'probe'});}}
@@ -53,12 +54,13 @@ async function capture(tabId,viewport){
     if(p.viewport.width!==viewport.width||p.viewport.height!==viewport.height)throw Error('Game view size changed. Restore the original window size.');
     lastCaptureAt=Date.now();
     const data=await chrome.tabs.captureVisibleTab(tab.windowId,{format:'png'});
+    const completedAt=Date.now();
     const after=await chrome.tabs.get(tabId);
     if(!after.active||after.url!==tab.url)throw Error('Game tab changed during capture.');
-    return {data,at:lastCaptureAt};
+    return {data,at:lastCaptureAt,completedAt,url:tab.url,documentToken:p.documentToken};
   };
   const pending=captureQueue.then(take,take);captureQueue=pending.catch(()=>{});
-  const {data,at:capturedAt}=await pending;
+  const {data,at:capturedAt,completedAt,url,documentToken}=await pending;
   const blob=await (await fetch(data)).blob();
   const bitmap=await createImageBitmap(blob);
   // Matching uses half-resolution pixels; all replay coordinates remain CSS pixels.
@@ -68,7 +70,7 @@ async function capture(tabId,viewport){
   ctx.drawImage(bitmap,0,0,w,h);bitmap.close();
   const rgba=ctx.getImageData(0,0,w,h).data,gray=new Uint8Array(w*h);
   for(let i=0;i<gray.length;i++)gray[i]=Math.round(rgba[i*4]*.299+rgba[i*4+1]*.587+rgba[i*4+2]*.114);
-  return {width:w,height:h,data:gray,at:capturedAt,scaleX:viewport.width/w,scaleY:viewport.height/h};
+  return {width:w,height:h,data:gray,at:capturedAt,completedAt,url,documentToken,scaleX:viewport.width/w,scaleY:viewport.height/h};
 }
 function patchAt(f,x,y,size=32){
   const w=Math.min(size,f.width),h=Math.min(size,f.height),cx=x/f.scaleX,cy=y/f.scaleY,left=Math.max(0,Math.min(f.width-w,Math.round(cx-w/2))),top=Math.max(0,Math.min(f.height-h,Math.round(cy-h/2)));
@@ -77,8 +79,28 @@ function patchAt(f,x,y,size=32){
   if(size===32&&data.reduce((a,b)=>a+(b-mean)**2,0)/data.length<70)return patchAt(f,x,y,64);
   return {width:w,height:h,offsetX:cx-left,offsetY:cy-top,data};
 }
+async function recordFrame(s){
+ if(s.pendingFrame)return s.pendingFrame;
+ s.pendingFrame=(async()=>{
+  try{
+   const frame=await capture(s.tabId,s.recording.viewport);
+   if(session!==s||s.cancelled)return null;
+   s.frames||=[];s.frames.push(frame);if(s.frames.length>12)s.frames.shift();
+   const recovered=s.visualDisconnected;s.visualDisconnected=false;s.captureError='';
+   if(recovered){s.message='Visual capture recovered. Earlier missing targets remain flagged.';await notify();}
+   return frame;
+  }catch(e){
+   if(session!==s||s.cancelled)return null;
+   const changed=s.captureError!==e.message;s.visualDisconnected=true;s.captureError=e.message;
+   s.message='Inputs are saving, but visual capture failed: '+e.message;
+   if(changed)await notify();return null;
+  }
+ })();
+ try{return await s.pendingFrame;}finally{s.pendingFrame=null;}
+}
 function startFrames(s){
-  frameTimer=setInterval(async()=>{if(captureBusy||session!==s||s.mode!=='recording')return;captureBusy=true;try{frame=await capture(s.tabId,s.recording.viewport);if(s.visualDisconnected){s.visualDisconnected=false;s.message='Recording inputs and visual targets.';await notify();}}catch(e){frame=null;s.visualDisconnected=true;s.message='Inputs are saving, but visual capture failed: '+e.message;await notify();}finally{captureBusy=false;}},650);
+ clearInterval(frameTimer);
+ frameTimer=setInterval(()=>{if(session===s&&s.mode==='recording'&&!s.pendingFrame)void recordFrame(s);},650);
 }
 async function startRecord(tabId,name){
   if(session)throw Error('Stop the current session first.');
@@ -86,7 +108,7 @@ async function startRecord(tabId,name){
   const r={format:FORMAT,version:VERSION,id:crypto.randomUUID(),name:String(name||'New mission').trim().slice(0,120)||'New mission',created:new Date().toISOString(),startURL:tab.url,viewport:p.viewport,notes:'',minimumMs:MINIMUM_MISSION_MS,timingReviewed:false,steps:[]};
   session={tabId,mode:'recording',started:Date.now(),recording:r,message:'Recording inputs and objective changes.',index:0,heldKeys:new Map(),buttons:0};
   if(p.checkpoint.title)r.steps.push({type:'checkpoint',at:0,checkpoint:p.checkpoint,url:tab.url});
-  try{frame=await capture(tabId,r.viewport);}catch(e){frame=null;session.visualDisconnected=true;session.message='Inputs are saving, but visual capture failed: '+e.message;}
+  await recordFrame(session);
   await put(r);await notify();startFrames(session);return snapshot();
 }
 async function resumeRecord(tabId,id){
@@ -108,17 +130,25 @@ async function resumeRecord(tabId,id){
   const backup=structuredClone(original);backup.id=crypto.randomUUID();backup.name=(original.name+' — before continuation').slice(0,120);await put(backup);
   r.steps.push(boundary);r.timingReviewed=false;
   session={tabId,mode:'recording',started:Date.now()-last.at,recording:r,message:'Continuing saved recording. Previous steps preserved.',index:0,heldKeys:new Map(),buttons:0};
-  frame=null;try{frame=await capture(tabId,r.viewport);}catch{}
+  await recordFrame(session);
   await put(r);await notify();startFrames(session);return snapshot();
 }
-async function ingest(sender,step,preFrame){
-  const s=session;if(!s||s.mode!=='recording'||sender.tab?.id!==s.tabId)return;
+async function ingest(sender,step,frames,pendingFrame,owner){
+  const s=session;if(s!==owner)return;if(!s||s.mode!=='recording'||sender.tab?.id!==s.tabId)return;
   if(s.recording.steps.length>=MAX_STEPS){await stop('Maximum recording length reached; saved.');return;}
   if(!gameURL(step.url)){await stop('Left SmallVerse; recording saved.');return;}
-  // Use only the most recent pre-action frame. Never pretend a post-click frame is a target.
   if(['pointerdown','wheel'].includes(step.type)){
-    if(preFrame&&s.started+step.at-preFrame.at>=0&&s.started+step.at-preFrame.at<1400)step.patch=patchAt(preFrame,step.x,step.y);
-    else step.visualUnavailable=true;
+    const actionAt=s.started+step.at;
+    let chosen=choosePreActionFrame(frames,actionAt,step.url,step.documentToken);
+    // A screenshot completed before the click may still be decoding when its
+    // event arrives. Wait briefly for that existing capture, never capture after
+    // the click and pretend that image was the pre-action view.
+    if(!chosen.frame&&pendingFrame){
+      const pending=await Promise.race([pendingFrame,sleep(1500).then(()=>null)]);
+      if(pending)chosen=choosePreActionFrame([...frames,pending],actionAt,step.url,step.documentToken);
+    }
+    if(chosen.frame){step.patch=patchAt(chosen.frame,step.x,step.y);step.visualAgeMs=chosen.age;}
+    else{step.visualUnavailable=true;step.visualIssue=s.captureError?'capture-error':chosen.reason;if(chosen.age!==undefined)step.visualAgeMs=chosen.age;}
   }
   step.at=Math.max(step.at,s.recording.steps.at(-1)?.at||0);
   if(step.type==='pointerdown'&&/accept this mission/i.test([step.target?.aria,step.target?.title,step.target?.text].join(' '))){s.acceptedFrom=step.checkpoint;}
@@ -150,7 +180,8 @@ async function stop(message='Stopped. Recording saved locally.'){
   }
   if(s.recording.steps.length&&!s.recording.source)await put(s.recording);
   await page(s.tabId,{kind:'mode',mode:'idle'}).catch(()=>{});
-  session=null;frame=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
+  if(s.mode==='recording'){const c=captureCoverage(s.recording.steps);message+=` Images saved: ${c.images}/${c.total}. ${c.unverified} world targets lack both an image and a named control.`;}
+  session=null;lastStatus={mode:'idle',message};await detach(s.tabId);await notify();return snapshot();
 }
 function alive(s){if(session!==s||s.cancelled)throw Error('Cancelled');}
 async function safeInput(s,method,params){alive(s);if(s.reconnect)throw Error('Playback disconnected; position retained.');s.inFlight=true;await persistPlayback();alive(s);if(!gameURL((await chrome.tabs.get(s.tabId)).url))throw Error('The tab left SmallVerse.');alive(s);await command(s.tabId,method,params);}
@@ -332,7 +363,7 @@ async function pause(tabId){
   await notify();if(session.mode==='playing'&&!session.runActive)void run(session);return snapshot();
 }
 async function handle(m,sender){
-  if(m.kind==='event'){const preFrame=frame;serial=serial.then(()=>ingest(sender,m.step,preFrame)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
+  if(m.kind==='event'){const owner=session,frames=[...(session?.frames||[])],pendingFrame=session?.pendingFrame;serial=serial.then(()=>ingest(sender,m.step,frames,pendingFrame,owner)).catch(async e=>{if(session){session.message=e.message;await notify();}});return {ok:true};}
   const extensionControl=sender.url&&['popup.html','library.html'].some(path=>sender.url===chrome.runtime.getURL(path));
   const fromPage=!!sender.tab&&!extensionControl;
   if(fromPage&&!['stop','contentReady','markFinalTask','markMissionStart'].includes(m.kind))throw Error('This command is only available in the extension controls.');
@@ -443,9 +474,9 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
 });
 chrome.commands.onCommand.addListener(name=>{void recoveredRecording.then(()=>name==='stop'?handle({kind:'stop'},{}):name==='pause'?pause():null).catch(()=>{});});
 chrome.debugger.onDetach.addListener(({tabId})=>{if(session?.tabId===tabId){
-  const s=session;if(s.cancelled)return;clearInterval(frameTimer);frameTimer=null;frame=null;
+  const s=session;if(s.cancelled)return;
   if(s.mode==='recording'){
-    s.visualDisconnected=true;s.message='Still recording clicks and typing. Visual capture disconnected; new canvas clicks may need manual target review.';
+    startFrames(s);s.message='Recorder connection changed; screenshot capture continues independently.';
     void notify();return;
   }
   s.mode='paused';s.reconnect=true;s.restartRequired=!!(s.inFlight||s.buttons||s.heldKeys.size);s.message='Chrome disconnected playback. Your position is saved. Resume to reconnect, or select the current objective if an action was interrupted.';void notify();

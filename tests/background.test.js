@@ -295,3 +295,19 @@ test('reviewed hidden-target repair fails closed when scene capture is unavailab
  await waitFor(v=>v.status.mode==='paused');assert(!commands.some(c=>c.method.startsWith('Input.')));
  await call('stop');
 });
+
+test('recording selects pre-action history for delayed events and keeps capturing after debugger detachment',async()=>{
+ const oldCapture=chrome.tabs.captureVisibleTab,oldBitmap=globalThis.createImageBitmap,oldCanvas=globalThis.OffscreenCanvas;let captures=0;
+ chrome.tabs.captureVisibleTab=async()=>{captures++;return 'data:text/plain,test';};
+ globalThis.createImageBitmap=async()=>({width:2880,height:1514,close(){}});
+ globalThis.OffscreenCanvas=class{getContext(){const value=captures===1?80:160;return {drawImage(){},getImageData(){return {data:new Uint8Array(720*379*4).fill(value)};}};}};
+ try{
+  await call('start',{tabId:1,name:'Capture history test'});const {id,started}=temporary.activeRecording;
+  const at=Date.now()-started;await delay(850);assert(captures>=2);
+  await call('event',{step:{...click[0],target:null,at,url}},{tab:{id:1}});
+  await waitFor(v=>v.status.capture?.total===1);
+  const r=await call('get',{id});assert(r.steps.at(-1).patch);assert.equal(r.steps.at(-1).patch.data[0],80);
+  const before=captures;listeners.detach({tabId:1});await delay(850);assert(captures>before);
+  await call('stop');const state=await call('status');assert.match(state.status.message,/Images saved: 1\/1/);
+ }finally{await call('stop');chrome.tabs.captureVisibleTab=oldCapture;globalThis.createImageBitmap=oldBitmap;globalThis.OffscreenCanvas=oldCanvas;}
+});
